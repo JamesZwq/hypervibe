@@ -46,7 +46,9 @@ enum ConfigStore {
       //             button.menu button.tv button.siri button.playPause
       //             button.volumeUp button.volumeDown button.back
       //             button.nextTrack button.prevTrack button.mute button.power
-      //   Long-press: add ".hold" to any button/ring key — e.g. button.menu.hold, ring.up.hold
+      //   Long-press: add ".hold" to any button/ring key — e.g. button.menu.hold, ring.up.hold.
+      //     Multi-stage: also ".hold2" / ".hold3" for deeper holds. Release-to-select — keep
+      //     holding to reach a deeper stage; the deepest stage reached fires when you let go.
       // Actions: keystroke(keys) media(key) mouse(op) launch(app|url)
       //          shell(command) applescript(script) mode(to)
       // A binding OVERRIDES native behavior; unbound buttons stay native.
@@ -56,7 +58,9 @@ enum ConfigStore {
         "cursorDeadzone": 0.006,     // higher = more jitter ignored, easier to hold & click
         "clickRiseThreshold": 0.1,   // contact rise counted as a press (lower = freezes more readily)
         "pressMoveMax": 0.025,       // finger move above this cancels a stray press-freeze
-        "holdThreshold": 0.5,        // seconds to hold before a button's ".hold" long-press fires
+        "holdThreshold": 0.5,        // seconds held → stage 1 (".hold"). Fires on RELEASE (release-to-select).
+        "holdThreshold2": 1.0,       // seconds held → stage 2 (".hold2"), a deeper hold
+        "holdThreshold3": 1.6,       // seconds held → stage 3 (".hold3"), the deepest hold
         // Circular scroll (iPod wheel): circle a finger on the OUTER ring to scroll.
         "circularScroll": {
           "enabled": true,
