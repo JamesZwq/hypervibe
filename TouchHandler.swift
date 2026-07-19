@@ -75,7 +75,11 @@ class TouchHandler {
     /// rise above this threshold = a press starting → freeze the cursor for a short window so the
     /// press/release doesn't drift the pointer.
     var clickRiseThreshold: Double = 0.1
-    private var pressFreezeWindow = 20    // frames (~0.3s at ~67Hz) to freeze after a press onset
+    /// A press is a contact spike WITH the finger nearly still. If it's moving more than this
+    /// (normalized), it's a real cursor move — so a stray freeze is cancelled and the cursor never
+    /// feels stuck ("断触").
+    var pressMoveMax: Double = 0.025
+    private var pressFreezeWindow = 15
     private var pressFreezeFrames = 0
     private var lastContact: Float = 0
     /// Position-follow smoothing for circular scroll: total scroll always equals total rotation ×
@@ -365,16 +369,22 @@ class TouchHandler {
             // it resumes cleanly.
             let rise = contactSize - lastContact
             lastContact = contactSize
-            if Double(rise) > clickRiseThreshold {
+            let fingerStill = Double(hypot(deltaX, deltaY)) < pressMoveMax
+            // Press onset = contact spikes up WHILE the finger is nearly still.
+            if Double(rise) > clickRiseThreshold && fingerStill {
                 pressFreezeFrames = pressFreezeWindow
                 rmDebug(String(format: "🛑 press-freeze rise=%.3f contact=%.3f", rise, contactSize))
             }
-            if cursorController.isClickActive || pressFreezeFrames > 0 {
+            // Freeze during the physical click, or during a press-onset window — but only while the
+            // finger stays still. Clear finger movement cancels a stray freeze immediately, so the
+            // cursor never feels stuck.
+            if cursorController.isClickActive || (pressFreezeFrames > 0 && fingerStill) {
                 if pressFreezeFrames > 0 { pressFreezeFrames -= 1 }
                 lastTouchPosition = currentPos
                 lastTouchCount = activeTouchCount
                 return
             }
+            pressFreezeFrames = 0
 
             // Jitter deadzone: ignore sub-threshold frames and keep the anchor so slow
             // deliberate motion still accumulates across frames, but tremor nets ~zero.
