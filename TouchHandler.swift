@@ -71,11 +71,13 @@ class TouchHandler {
     private var didScroll = false
     /// Sub-pixel accumulator so smooth continuous rotation emits whole scroll pixels as they add up.
     private var scrollRemainder: Double = 0
-    /// Press-to-click freeze: contact grows when you press to click; freeze the cursor so the
-    /// growing thumb contact doesn't drift the pointer. Value is the contact-rise fraction over
-    /// the resting baseline that counts as "pressing".
-    var clickSteadiness: Double = 0.6
-    private var contactBaseline: Float = 0
+    /// Press-to-click freeze: pressing to click makes contact (zTotal) spike upward. A per-frame
+    /// rise above this threshold = a press starting → freeze the cursor for a short window so the
+    /// press/release doesn't drift the pointer.
+    var clickRiseThreshold: Double = 0.1
+    private var pressFreezeWindow = 20    // frames (~0.3s at ~67Hz) to freeze after a press onset
+    private var pressFreezeFrames = 0
+    private var lastContact: Float = 0
     /// Position-follow smoothing for circular scroll: total scroll always equals total rotation ×
     /// speed (never over/under), and each frame eases toward that target so jittery hand circling
     /// still scrolls smoothly. `scrollEase` = how fast it catches up (smaller = smoother/laggier).
@@ -323,7 +325,8 @@ class TouchHandler {
             scrollRemainder = 0
             rotationTotal = 0
             scrollEmitted = 0
-            contactBaseline = contactSize
+            lastContact = contactSize
+            pressFreezeFrames = 0
             circularDetector.reset()
             sessionMaxFingers = activeTouchCount
             touchStartTime = mach_absolute_time()
@@ -356,18 +359,22 @@ class TouchHandler {
                     return
                 }
             }
-            // Press-to-click freeze: when a physical click is active, or the finger presses harder
-            // (contact grows past the resting baseline), don't move the cursor — the growing thumb
-            // contact would otherwise drag the pointer down as you press. Re-anchor so it resumes
-            // cleanly when the press ends.
-            let pressing = contactBaseline > 0 && contactSize > contactBaseline * Float(1 + clickSteadiness)
-            if cursorController.isClickActive || pressing {
+            // Press-to-click freeze: pressing to click spikes contact (zTotal) upward. A sharp
+            // per-frame rise = a press starting → freeze the cursor for a short window covering the
+            // press + click + release. Also freeze while the physical click is held. Re-anchor so
+            // it resumes cleanly.
+            let rise = contactSize - lastContact
+            lastContact = contactSize
+            if Double(rise) > clickRiseThreshold {
+                pressFreezeFrames = pressFreezeWindow
+                rmDebug(String(format: "🛑 press-freeze rise=%.3f contact=%.3f", rise, contactSize))
+            }
+            if cursorController.isClickActive || pressFreezeFrames > 0 {
+                if pressFreezeFrames > 0 { pressFreezeFrames -= 1 }
                 lastTouchPosition = currentPos
                 lastTouchCount = activeTouchCount
                 return
             }
-            // Track the resting contact level only while not pressing.
-            contactBaseline += (contactSize - contactBaseline) * 0.15
 
             // Jitter deadzone: ignore sub-threshold frames and keep the anchor so slow
             // deliberate motion still accumulates across frames, but tremor nets ~zero.
@@ -375,8 +382,6 @@ class TouchHandler {
                 lastTouchCount = activeTouchCount
                 return
             }
-            rmDebug(String(format: "🖱 d=(%.4f,%.4f) contact=%.3f base=%.3f click=%d",
-                           deltaX, deltaY, contactSize, contactBaseline, cursorController.isClickActive ? 1 : 0))
             let clamped = moveCursor(deltaX: deltaX, deltaY: deltaY)
             // Only advance touch tracking if cursor wasn't clamped in that direction
             if let lastPos = lastTouchPosition {
