@@ -7,21 +7,9 @@
 
 import IOKit
 import IOKit.hid
-import IOKit.pwr_mgt
 import Foundation
 import Carbon.HIToolbox
 import AppKit
-
-/// Wakes the display (and resets the display-sleep idle timer) so any remote input brings the
-/// screen back after `button.power` slept it via `pmset displaysleepnow`. Idempotent — a no-op
-/// when the display is already awake.
-enum DisplayWake {
-    private static var assertionID: IOPMAssertionID = IOPMAssertionID(0)
-    static func nudge() {
-        IOPMAssertionDeclareUserActivity("siriRemote: remote input" as CFString,
-                                         kIOPMUserActiveLocal, &assertionID)
-    }
-}
 
 class RemoteInputHandler {
     private let cursorController: CursorController
@@ -152,9 +140,11 @@ class RemoteInputHandler {
         }
         buttonState[buttonName] = isPressed
 
-        // Any real button press wakes the display — so after button.power sleeps it (pmset
-        // displaysleepnow), pressing anything brings the screen back. Press only, never release.
-        if isPressed { DisplayWake.nudge() }
+        // Any real button press restores brightness — so after button.power dims all displays to
+        // minimum (brightness action), pressing anything brings the backlight back to max. The
+        // guard only restores when currently at/near minimum, so normal-brightness presses are a
+        // no-op here. Press only, never release.
+        if isPressed { Brightness.restoreIfDimmed() }
 
         // Volume keys are left to the remote's native BT/AVRCP absolute-volume path so they
         // control system volume in every app (we no longer arm the revert guard to undo it).

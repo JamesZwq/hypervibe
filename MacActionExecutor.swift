@@ -37,6 +37,8 @@ final class MacActionExecutor: ActionExecutor {
             // release stops it). Here we just synthesize a single keystroke — this handles the
             // first fire and any stray dispatch (e.g. bound to a swipe/tap that has no hold state).
             Keys.synthesize(keys)
+        case .brightness(let value):
+            Brightness.setAll(Float(value))
         case .mode:
             break // handled inside Controller; never reaches the executor
         }

@@ -30,6 +30,7 @@ SWIFT_FILES=(
     "KeyMap.swift"
     "MacActionExecutor.swift"
     "Spaces.swift"
+    "Brightness.swift"
     "AppWatcher.swift"
     "ConfigStore.swift"
     "ConfigFileWatcher.swift"
