@@ -52,16 +52,19 @@ enum ConfigStore {
       // A binding OVERRIDES native behavior; unbound buttons stay native.
       "settings": {
         "defaultMode": "global",
-        "cursorSpeed": 0.6,       // lower = slower / less sensitive
-        "cursorDeadzone": 0.006,  // higher = more jitter ignored, easier to hold & click
-        "holdThreshold": 0.5,     // seconds to hold before a button's ".hold" long-press fires
+        "cursorSpeed": 0.6,          // lower = slower / less sensitive
+        "cursorDeadzone": 0.006,     // higher = more jitter ignored, easier to hold & click
+        "clickRiseThreshold": 0.1,   // contact rise counted as a press (lower = freezes more readily)
+        "pressMoveMax": 0.025,       // finger move above this cancels a stray press-freeze
+        "holdThreshold": 0.5,        // seconds to hold before a button's ".hold" long-press fires
         // Circular scroll (iPod wheel): circle a finger on the OUTER ring to scroll.
         "circularScroll": {
           "enabled": true,
-          "minRadius": 0.35,       // only touches this far from center count (outer ring)
-          "startThreshold": 0.35,  // radians to rotate before scrolling starts
-          "pixelsPerRadian": 160,  // scroll pixels per radian of rotation (speed)
-          "invert": false          // flip if it scrolls the wrong way
+          "minRadius": 0.35,         // only touches this far from center count (outer ring)
+          "startThreshold": 0.35,    // radians to rotate before scrolling starts
+          "pixelsPerRadian": 160,    // scroll pixels per radian of rotation (speed)
+          "scrollEase": 0.3,         // scroll smoothing (smaller = smoother / laggier)
+          "invert": false            // flip if it scrolls the wrong way
         }
       },
 

@@ -68,7 +68,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // the config file's settings block.
         let model = SettingsModel(initial: TuneStore.load() ?? TuneSettings(seed: config.settings))
         model.onApply = { [weak self] tune in self?.applyTune(tune) }
-        applyTune(model.tune)
         settingsModel = model
         let settingsWin = SettingsWindowController(model: model)
         settingsWindow = settingsWin
@@ -84,14 +83,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
         controller = engineController
         remoteInputHandler?.controller = engineController
-        remoteInputHandler?.holdThreshold = config.settings.holdThreshold
         appWatcher = AppWatcher { [weak engineController] bundleID in
             engineController?.frontmostAppChanged(bundleID: bundleID)
         }
         configWatcher = ConfigFileWatcher(url: ConfigStore.path) { [weak self] in
-            let cfg = ConfigStore.loadConfig()
-            self?.controller?.reload(config: cfg)
-            self?.remoteInputHandler?.holdThreshold = cfg.settings.holdThreshold
+            self?.controller?.reload(config: ConfigStore.loadConfig())
             print("♻️ siriRemote config reloaded")
         }
         print("🧩 siriRemote config engine active — \(ConfigStore.path.path)")
@@ -115,6 +111,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         touchHandler?.start()
+        applyTune(model.tune)   // touchHandler + remoteInputHandler now exist — push the tuning
         remoteInputHandler?.onButtonActivity = { [weak self] in
             self?.touchHandler?.tryReconnectTrackpad()
         }
@@ -150,7 +147,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func applyTune(_ t: TuneSettings) {
         touchHandler?.cursorSpeed = CGFloat(t.cursorSpeed)
         touchHandler?.cursorDeadzone = CGFloat(t.cursorDeadzone)
+        touchHandler?.clickRiseThreshold = t.clickRiseThreshold
+        touchHandler?.pressMoveMax = t.pressMoveMax
         touchHandler?.circularConfig = t.circularConfig
+        remoteInputHandler?.holdThreshold = t.holdThreshold
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

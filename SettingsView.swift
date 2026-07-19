@@ -15,12 +15,14 @@ struct SettingsView: View {
             header
             Form {
                 cursorSection
+                clickSection
                 circularSection
+                buttonsSection
                 footerSection
             }
             .formStyle(.grouped)
         }
-        .frame(width: 452, height: 700)
+        .frame(width: 452, height: 860)
     }
 
     // MARK: - Header
@@ -83,6 +85,36 @@ struct SettingsView: View {
         }
     }
 
+    private var clickSection: some View {
+        Section {
+            slider(icon: "hand.tap.fill", title: "Press sensitivity",
+                   value: $model.tune.clickRiseThreshold, range: 0.04...0.25,
+                   minIcon: "hare.fill", maxIcon: "tortoise.fill",
+                   display: { String(format: "%.2f", $0) })
+            slider(icon: "arrow.up.and.down.and.arrow.left.and.right", title: "Move tolerance",
+                   value: $model.tune.pressMoveMax, range: 0.01...0.06,
+                   minIcon: "smallcircle.filled.circle.fill", maxIcon: "circle",
+                   display: { String(format: "%.3f", $0) })
+        } header: {
+            Text("Click")
+        } footer: {
+            Text("Pressing to click freezes the cursor so it doesn't drift. Lower sensitivity freezes more readily; higher move tolerance keeps it from feeling stuck.")
+        }
+    }
+
+    private var buttonsSection: some View {
+        Section {
+            slider(icon: "clock", title: "Long-press time",
+                   value: $model.tune.holdThreshold, range: 0.2...1.2,
+                   minIcon: "hare.fill", maxIcon: "tortoise.fill",
+                   display: { String(format: "%.1fs", $0) })
+        } header: {
+            Text("Buttons")
+        } footer: {
+            Text("How long to hold a button before its \u{201C}.hold\u{201D} long-press fires.")
+        }
+    }
+
     private var circularSection: some View {
         Section {
             Toggle(isOn: $model.tune.circularEnabled) {
@@ -101,6 +133,10 @@ struct SettingsView: View {
                        value: $model.tune.circularPixelsPerRadian, range: 40...400,
                        minIcon: "tortoise.fill", maxIcon: "hare.fill",
                        display: { String(format: "%.0f", $0) })
+                slider(icon: "wind", title: "Smoothness",
+                       value: $model.tune.circularScrollEase, range: 0.1...0.6,
+                       minIcon: "tortoise.fill", maxIcon: "hare.fill",
+                       display: { String(format: "%.2f", $0) })
                 Toggle(isOn: $model.tune.circularInvert) {
                     rowLabel("Reverse direction", "arrow.left.arrow.right")
                 }

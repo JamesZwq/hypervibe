@@ -83,11 +83,10 @@ class TouchHandler {
     private var pressFreezeFrames = 0
     private var lastContact: Float = 0
     /// Position-follow smoothing for circular scroll: total scroll always equals total rotation ×
-    /// speed (never over/under), and each frame eases toward that target so jittery hand circling
-    /// still scrolls smoothly. `scrollEase` = how fast it catches up (smaller = smoother/laggier).
+    /// speed (never over/under), and each frame eases toward that target (circularConfig.scrollEase)
+    /// so jittery hand circling still scrolls smoothly.
     private var rotationTotal: Double = 0
     private var scrollEmitted: Double = 0
-    var scrollEase: Double = 0.3
     private let tapMaxDuration: Double = 0.22
     private let tapMaxDistance: CGFloat = 0.07
     // Swipe detection: velocity-gated single-finger flick. Distance > 35% of trackpad in < 350ms,
@@ -322,7 +321,6 @@ class TouchHandler {
         
         // Handle touch start
         if lastTouchPosition == nil {
-            rmDebug("📱 touch begin: fingers=\(activeTouchCount) pos=(\(avgX), \(avgY)) contact=\(contactSize)")
             hadMultipleFingersInSession = false
             circularActive = false
             didScroll = false
@@ -355,7 +353,7 @@ class TouchHandler {
                     // but eased each frame so jittery circling still scrolls smoothly.
                     rotationTotal += Double(radians)
                     let target = rotationTotal * circularConfig.pixelsPerRadian
-                    let step = (target - scrollEmitted) * scrollEase
+                    let step = (target - scrollEmitted) * circularConfig.scrollEase
                     scrollEmitted += step
                     emitCircularScroll(pixels: step)
                     lastTouchPosition = currentPos
@@ -373,7 +371,6 @@ class TouchHandler {
             // Press onset = contact spikes up WHILE the finger is nearly still.
             if Double(rise) > clickRiseThreshold && fingerStill {
                 pressFreezeFrames = pressFreezeWindow
-                rmDebug(String(format: "🛑 press-freeze rise=%.3f contact=%.3f", rise, contactSize))
             }
             // Freeze during the physical click, or during a press-onset window — but only while the
             // finger stays still. Clear finger movement cancels a stray freeze immediately, so the
