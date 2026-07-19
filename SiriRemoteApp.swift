@@ -84,11 +84,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
         controller = engineController
         remoteInputHandler?.controller = engineController
+        remoteInputHandler?.holdThreshold = config.settings.holdThreshold
         appWatcher = AppWatcher { [weak engineController] bundleID in
             engineController?.frontmostAppChanged(bundleID: bundleID)
         }
         configWatcher = ConfigFileWatcher(url: ConfigStore.path) { [weak self] in
-            self?.controller?.reload(config: ConfigStore.loadConfig())
+            let cfg = ConfigStore.loadConfig()
+            self?.controller?.reload(config: cfg)
+            self?.remoteInputHandler?.holdThreshold = cfg.settings.holdThreshold
             print("♻️ siriRemote config reloaded")
         }
         print("🧩 siriRemote config engine active — \(ConfigStore.path.path)")

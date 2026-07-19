@@ -46,6 +46,7 @@ enum ConfigStore {
       //             button.menu button.tv button.siri button.playPause
       //             button.volumeUp button.volumeDown button.back
       //             button.nextTrack button.prevTrack button.mute button.power
+      //   Long-press: add ".hold" to any button/ring key — e.g. button.menu.hold, ring.up.hold
       // Actions: keystroke(keys) media(key) mouse(op) launch(app|url)
       //          shell(command) applescript(script) mode(to)
       // A binding OVERRIDES native behavior; unbound buttons stay native.
@@ -53,6 +54,7 @@ enum ConfigStore {
         "defaultMode": "global",
         "cursorSpeed": 0.6,       // lower = slower / less sensitive
         "cursorDeadzone": 0.006,  // higher = more jitter ignored, easier to hold & click
+        "holdThreshold": 0.5,     // seconds to hold before a button's ".hold" long-press fires
         // Circular scroll (iPod wheel): circle a finger on the OUTER ring to scroll.
         "circularScroll": {
           "enabled": true,

@@ -16,9 +16,14 @@ class RemoteInputHandler {
     private weak var menuBarManager: MenuBarManager?
     private var devices: [IOHIDDevice] = []
 
-    /// Config engine (SiriRemoteCore). When it has a binding for a button, it wins;
-    /// otherwise we fall through to the native ButtonAction mapping below.
+    /// Config engine (SiriRemoteCore). Buttons are routed through it; unbound buttons do nothing.
     var controller: Controller?
+
+    /// Long-press: if a `<key>.hold` binding exists, hold past this many seconds fires it; a
+    /// short press fires the plain `<key>` on release. HID callbacks run on the main runloop.
+    var holdThreshold: TimeInterval = 0.5
+    private var pendingHold: [String: DispatchWorkItem] = [:]
+    private var holdFired: Set<String> = []
     
     /// Called on any button activity; use to trigger trackpad re-scan after remote wake.
     var onButtonActivity: (() -> Void)?
@@ -135,13 +140,44 @@ class RemoteInputHandler {
             RemoteInputHandler.lastProcessedTime = mach_absolute_time()
         }
 
-        // Config-driven only: a button with no binding does nothing. There are no built-in
-        // default key mappings — bind button.* / ring.* in the config to give buttons actions.
-        if pressed, let controller = controller {
-            let key = RemoteInputHandler.configKey(for: buttonName)
-            if controller.handle(InputEvent(key: key)) {
-                print("🔘 \(key) (config)")
+        // Config-driven only, with long-press discrimination.
+        routeButton(buttonName, pressed: pressed)
+    }
+
+    /// Route a button press/release through the config engine. If a `<key>.hold` binding exists,
+    /// holding past `holdThreshold` fires `<key>.hold` and a short press fires `<key>` on release;
+    /// otherwise the tap fires immediately on press. Unbound events do nothing.
+    private func routeButton(_ buttonName: String, pressed: Bool) {
+        guard let controller = controller else { return }
+        let tapKey = RemoteInputHandler.configKey(for: buttonName)
+        let holdKey = tapKey + ".hold"
+
+        if pressed {
+            guard controller.hasBinding(for: holdKey) else {
+                // No long-press binding → fire the tap immediately on press (no added latency).
+                if controller.handle(InputEvent(key: tapKey)) { print("🔘 \(tapKey) (config)") }
+                return
             }
+            // Long-press exists → decide short vs long: fire hold at the threshold, tap on early release.
+            holdFired.remove(buttonName)
+            let work = DispatchWorkItem { [weak self] in
+                guard let self = self else { return }
+                self.pendingHold[buttonName] = nil
+                self.holdFired.insert(buttonName)
+                if controller.handle(InputEvent(key: holdKey)) { print("🔘 \(holdKey) (config)") }
+            }
+            pendingHold[buttonName] = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + holdThreshold, execute: work)
+        } else {
+            // Release: if a pending hold hasn't fired yet, it was a short press → fire the tap.
+            if let work = pendingHold.removeValue(forKey: buttonName) {
+                work.cancel()
+                if !holdFired.contains(buttonName),
+                   controller.handle(InputEvent(key: tapKey)) {
+                    print("🔘 \(tapKey) (config)")
+                }
+            }
+            holdFired.remove(buttonName)
         }
     }
     
