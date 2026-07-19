@@ -21,6 +21,11 @@ struct LayoutView: View {
     @State private var highlightedKey: String?
     /// The input row currently open in the editor panel (nil = nothing selected).
     @State private var selectedKey: String?
+    // "Add app / layer" popover state.
+    @State private var showAdd = false
+    @State private var addIsLayer = false
+    @State private var addName = ""
+    @State private var addTargetMode = "global"
 
     // The mode currently being viewed (falls back to the default if the selection is gone
     // after a hot-reload).
@@ -134,19 +139,68 @@ struct LayoutView: View {
     }
 
     private var addChip: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "plus")
-                .font(.system(size: 12))
-                .frame(width: 22, height: 22)
-                .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .textBackgroundColor)))
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.25), lineWidth: 1))
-            Text("Add app…").font(.system(size: 13))
+        Button {
+            addName = ""; addIsLayer = false; addTargetMode = config.defaultModeName; showAdd = true
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "plus")
+                    .font(.system(size: 12))
+                    .frame(width: 22, height: 22)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .textBackgroundColor)))
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.25), lineWidth: 1))
+                Text("Add…").font(.system(size: 13))
+            }
+            .padding(.leading, 9).padding(.trailing, 13).padding(.vertical, 7)
+            .foregroundStyle(.secondary)
+            .background(RoundedRectangle(cornerRadius: 11).fill(Color(nsColor: .controlBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: 11).stroke(Color.secondary.opacity(0.22), lineWidth: 1))
         }
-        .padding(.leading, 9).padding(.trailing, 13).padding(.vertical, 7)
-        .foregroundStyle(.secondary)
-        .background(RoundedRectangle(cornerRadius: 11).fill(Color(nsColor: .controlBackgroundColor)))
-        .overlay(RoundedRectangle(cornerRadius: 11).stroke(Color.secondary.opacity(0.22), lineWidth: 1))
-        .help("Assigning apps to modes is edited in config.jsonc for now.")
+        .buttonStyle(.plain)
+        .disabled(onSave == nil)
+        .popover(isPresented: $showAdd, arrowEdge: .bottom) { addPopover }
+    }
+
+    private var addPopover: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Picker("", selection: $addIsLayer) {
+                Text("App profile").tag(false)
+                Text("Layer").tag(true)
+            }.pickerStyle(.segmented).labelsHidden()
+            if addIsLayer {
+                TextField("Layer name (e.g. tvLayer)", text: $addName).textFieldStyle(.roundedBorder)
+                Text("A layer is a mode you activate by holding a key (the Layer action). It inherits Global.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            } else {
+                TextField("App bundle id (e.g. com.apple.Notes)", text: $addName).textFieldStyle(.roundedBorder)
+                HStack(spacing: 6) {
+                    Text("uses mode").font(.system(size: 11)).foregroundStyle(.secondary)
+                    Picker("", selection: $addTargetMode) {
+                        ForEach(sortedModeNames, id: \.self) { Text($0).tag($0) }
+                    }.labelsHidden().frame(width: 130)
+                }
+            }
+            HStack {
+                Spacer()
+                Button("Cancel") { showAdd = false }
+                Button("Create") { createAdd() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(addName.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(16).frame(width: 300)
+    }
+
+    private func createAdd() {
+        let name = addName.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty, let onSave = onSave else { showAdd = false; return }
+        if addIsLayer {
+            onSave(config.addMode(name, inherits: config.defaultModeName))
+            selectedMode = name
+        } else {
+            onSave(config.setAppProfile(bundleID: name, mode: addTargetMode))
+            selectedMode = addTargetMode
+        }
+        showAdd = false
     }
 
     // MARK: - Legend
