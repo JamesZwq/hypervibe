@@ -146,23 +146,40 @@ class TouchHandler {
         findAndStartDevice()
     }
     
+    private func describe(_ dev: MTDevice) -> String {
+        let builtIn = MTDeviceIsBuiltIn(dev)
+        var devID: UInt64 = 0; MTDeviceGetDeviceID(dev, &devID)
+        var fam: Int32 = 0; MTDeviceGetFamilyID(dev, &fam)
+        var w: Int32 = 0, h: Int32 = 0; MTDeviceGetSensorSurfaceDimensions(dev, &w, &h)
+        return "builtIn=\(builtIn) id=\(devID) family=\(fam) surface=\(w)x\(h)"
+    }
+
+    /// The Siri Remote clickpad is a small square (~2775×2775 in 0.01 mm units); trackpads are
+    /// far larger (>12000 on the long axis). Match the remote by its small surface so we never
+    /// accidentally attach to a Magic Trackpad or the built-in trackpad.
+    private func isRemoteSurface(_ dev: MTDevice) -> Bool {
+        var w: Int32 = 0, h: Int32 = 0
+        MTDeviceGetSensorSurfaceDimensions(dev, &w, &h)
+        let maxDim = max(w, h)
+        return maxDim > 0 && maxDim < 6000
+    }
+
     private func findAndStartDevice() {
         guard let cfArray = MTDeviceCreateList()?.takeRetainedValue() else { return }
         let deviceList = cfArray as [MTDevice]
-        // Find non-built-in device (Siri Remote)
-        for dev in deviceList {
-            if !MTDeviceIsBuiltIn(dev) {
-                startDevice(dev)
-                return
-            }
+        rmDebug("📱 MTDeviceCreateList: \(deviceList.count) device(s)")
+        for (i, dev) in deviceList.enumerated() {
+            rmDebug("📱   [\(i)] \(describe(dev))")
         }
-        // Fallback: use second device if available
-        if deviceList.count > 1 {
-            startDevice(deviceList[1])
-        } else if device != nil {
-            // Clear stale ref so next checkAndReconnect will retry when the remote reappears in the list.
-            stopDevice()
+        // Attach to the remote specifically (small surface), never a trackpad.
+        if let remote = deviceList.first(where: { !MTDeviceIsBuiltIn($0) && isRemoteSurface($0) }) {
+            rmDebug("📱 selecting remote (small surface): \(describe(remote))")
+            startDevice(remote)
+            return
         }
+        // No remote-sized device present: do not hijack a trackpad; wait for the remote to appear.
+        rmDebug("📱 no remote-sized multitouch device found; not attaching")
+        if device != nil { stopDevice() }
     }
     
     private func startDevice(_ dev: MTDevice) {
