@@ -73,6 +73,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let settingsWin = SettingsWindowController(model: model)
         settingsWindow = settingsWin
         menuBarManager.onOpenSettings = { [weak settingsWin] in settingsWin?.show() }
+        // Convenience: `./HyperVibe --settings` pops the window open immediately.
+        if CommandLine.arguments.contains("--settings") {
+            DispatchQueue.main.async { settingsWin.show() }
+        }
 
         let engineController = Controller(
             engine: MappingEngine(config: config),
