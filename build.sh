@@ -39,6 +39,7 @@ SWIFT_FILES=(
     "../SiriRemoteCore/Sources/SiriRemoteCore/Action.swift"
     "../SiriRemoteCore/Sources/SiriRemoteCore/Config.swift"
     "../SiriRemoteCore/Sources/SiriRemoteCore/ConfigLoader.swift"
+    "../SiriRemoteCore/Sources/SiriRemoteCore/ConfigWriter.swift"
     "../SiriRemoteCore/Sources/SiriRemoteCore/Events.swift"
     "../SiriRemoteCore/Sources/SiriRemoteCore/CircularScroll.swift"
     "../SiriRemoteCore/Sources/SiriRemoteCore/MappingEngine.swift"

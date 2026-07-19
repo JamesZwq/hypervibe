@@ -32,6 +32,18 @@ enum ConfigStore {
         return (try? ConfigLoader.load(minimalFallback))!
     }
 
+    /// Serialize `config` back to `config.jsonc` (pretty-printed JSON via `ConfigWriter`; comments
+    /// are NOT preserved — once edited via the UI the file is machine-managed). Writes atomically
+    /// (temp file + rename), so a reader never sees a half-written file.
+    ///
+    /// The ConfigFileWatcher WILL fire after this write and hot-reload — but it reloads the exact
+    /// same values, and nothing in the reload path (`SiriRemoteApp`'s watcher closure) writes the
+    /// file, so there is no save→reload→save loop.
+    static func save(_ config: Config) throws {
+        let text = try ConfigWriter.serialize(config)
+        try text.write(to: path, atomically: true, encoding: .utf8)
+    }
+
     static let minimalFallback =
         "{ \"settings\": { \"defaultMode\": \"global\" }, \"modes\": { \"global\": {} } }"
 
