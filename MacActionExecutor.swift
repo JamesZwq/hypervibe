@@ -38,7 +38,9 @@ final class MacActionExecutor: ActionExecutor {
             // first fire and any stray dispatch (e.g. bound to a swipe/tap that has no hold state).
             Keys.synthesize(keys)
         case .brightness(let value):
-            Brightness.setAll(Float(value))
+            // Synthesize the hardware brightness keys so ALL displays move (DisplayServices misses
+            // some externals). Low value → dim to minimum, high → restore to maximum.
+            if value < 0.5 { Brightness.dimToMin() } else { Brightness.restoreToMax() }
         case .mode:
             break // handled inside Controller; never reaches the executor
         }

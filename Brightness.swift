@@ -2,51 +2,29 @@
 //  Brightness.swift
 //  HyperVibe (config engine integration)
 //
-//  Control display backlight brightness via the private DisplayServices framework, loaded with
-//  dlsym (no linker flag needed) — mirrors how Spaces.swift dlopens SkyLight. Used so the Power
-//  button can dim ALL displays to minimum (the Mac stays awake / remote-controllable, unlike
-//  display sleep) and any subsequent button/touch restores them to maximum. Private API —
-//  experimental and macOS-version dependent; robust to the symbols being unavailable.
+//  Display backlight control. Two mechanisms:
+//   • READ current brightness via the private DisplayServices framework (dlsym'd, no linker flag) —
+//     used only to tell whether we're already at minimum.
+//   • SET brightness by synthesizing the hardware brightness keys (NX_KEYTYPE_BRIGHTNESS_UP/DOWN),
+//     exactly like pressing F1/F2 — this moves EVERY display (including external ones that
+//     DisplayServicesSetBrightness silently misses), notch by notch.
 //
 
 import Foundation
 import CoreGraphics
+import AppKit
 
 enum Brightness {
-    private typealias SetFn = @convention(c) (CGDirectDisplayID, Float) -> Int32
-    private typealias GetFn = @convention(c) (CGDirectDisplayID, UnsafeMutablePointer<Float>) -> Int32
 
+    // MARK: - Read (DisplayServices)
+
+    private typealias GetFn = @convention(c) (CGDirectDisplayID, UnsafeMutablePointer<Float>) -> Int32
     private static let handle: UnsafeMutableRawPointer? =
         dlopen("/System/Library/PrivateFrameworks/DisplayServices.framework/DisplayServices", RTLD_LAZY)
-
-    private static func fn<T>(_ name: String, _ type: T.Type) -> T? {
-        guard let h = handle, let p = dlsym(h, name) else { return nil }
-        return unsafeBitCast(p, to: T.self)
-    }
-
-    private static let setBrightness: SetFn? = fn("DisplayServicesSetBrightness", SetFn.self)
-    private static let getBrightness: GetFn? = fn("DisplayServicesGetBrightness", GetFn.self)
-
-    /// All currently active (drawable) displays. Queries the count first, then fills the list.
-    private static func activeDisplays() -> [CGDirectDisplayID] {
-        var count: UInt32 = 0
-        guard CGGetActiveDisplayList(0, nil, &count) == .success, count > 0 else { return [] }
-        var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
-        guard CGGetActiveDisplayList(count, &ids, &count) == .success else { return [] }
-        return Array(ids.prefix(Int(count)))
-    }
-
-    /// Set every active display's brightness to `value` (clamped 0...1). No-op if the symbol is
-    /// unavailable.
-    static func setAll(_ value: Float) {
-        guard let setBrightness = setBrightness else {
-            rmDebug("💡 brightness: DisplayServicesSetBrightness unavailable"); return
-        }
-        let clamped = min(max(value, 0), 1)
-        let displays = activeDisplays()
-        for id in displays { _ = setBrightness(id, clamped) }
-        rmDebug("💡 brightness: set \(displays.count) display(s) → \(clamped)")
-    }
+    private static let getBrightness: GetFn? = {
+        guard let h = handle, let p = dlsym(h, "DisplayServicesGetBrightness") else { return nil }
+        return unsafeBitCast(p, to: GetFn.self)
+    }()
 
     /// The main display's current brightness (0...1), or nil if it can't be read.
     static func mainValue() -> Float? {
@@ -55,14 +33,52 @@ enum Brightness {
         return getBrightness(CGMainDisplayID(), &v) == 0 ? v : nil
     }
 
-    /// If the main display is currently at/near minimum brightness (below `threshold`), restore ALL
-    /// displays to maximum and return true; otherwise do nothing and return false. This is the
-    /// "only restore when at minimum" guard — a normal-brightness press never jumps to max.
+    // MARK: - Set (synthesized brightness keys — moves ALL displays like the keyboard does)
+
+    private static let brightnessUp:   Int32 = 2   // NX_KEYTYPE_BRIGHTNESS_UP
+    private static let brightnessDown: Int32 = 3   // NX_KEYTYPE_BRIGHTNESS_DOWN
+    private static let notches = 16                // full brightness range in key steps
+
+    /// Dim every display to minimum by tapping the brightness-down key `notches` times.
+    static func dimToMin()     { DispatchQueue.main.async { rampKey(brightnessDown, remaining: notches) } }
+    /// Raise every display to maximum by tapping the brightness-up key `notches` times.
+    static func restoreToMax() { DispatchQueue.main.async { rampKey(brightnessUp,   remaining: notches) } }
+
+    /// If the main display is at/near minimum brightness (below `threshold`), restore ALL displays
+    /// to maximum and return true; otherwise do nothing. The "only restore when at minimum" guard —
+    /// a normal-brightness press never jumps to max.
     @discardableResult
     static func restoreIfDimmed(threshold: Float = 0.05) -> Bool {
         guard let value = mainValue(), value < threshold else { return false }
-        setAll(1.0)
-        rmDebug("💡 brightness: restored to max (was \(value))")
+        restoreToMax()
+        rmDebug("💡 brightness: restore → max (main was \(value))")
         return true
+    }
+
+    /// Tap the key once per notch, spaced out on the main runloop — rapid-fire system events get
+    /// coalesced/dropped, and NSEvent creation must be on the main thread.
+    private static func rampKey(_ keyCode: Int32, remaining: Int) {
+        guard remaining > 0 else { return }
+        tapAuxKey(keyCode)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.012) {
+            rampKey(keyCode, remaining: remaining - 1)
+        }
+    }
+
+    private static func tapAuxKey(_ keyCode: Int32) {
+        postAuxKey(keyCode, down: true)
+        postAuxKey(keyCode, down: false)
+    }
+
+    /// Synthesize an NX_SYSDEFINED "aux control" key event (subtype 8) — the media/brightness key
+    /// path. data1 packs the key code and the up/down state.
+    private static func postAuxKey(_ keyCode: Int32, down: Bool) {
+        let data1 = (Int(keyCode) << 16) | ((down ? 0xa : 0xb) << 8)
+        guard let ev = NSEvent.otherEvent(
+            with: .systemDefined, location: .zero,
+            modifierFlags: NSEvent.ModifierFlags(rawValue: down ? 0xa00 : 0xb00),
+            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: 0, context: nil,
+            subtype: 8, data1: data1, data2: -1) else { return }
+        ev.cgEvent?.post(tap: .cghidEventTap)
     }
 }
