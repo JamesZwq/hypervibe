@@ -148,10 +148,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func applyTune(_ t: TuneSettings) {
         touchHandler?.cursorSpeed = CGFloat(t.cursorSpeed)
         touchHandler?.cursorDeadzone = CGFloat(t.cursorDeadzone)
+        touchHandler?.accelMin = CGFloat(t.accelMin)
+        touchHandler?.accelMax = CGFloat(t.accelMax)
+        touchHandler?.accelLowSpeed = CGFloat(t.accelLowSpeed)
+        touchHandler?.accelHighSpeed = CGFloat(t.accelHighSpeed)
         touchHandler?.clickRiseThreshold = t.clickRiseThreshold
         touchHandler?.pressMoveMax = t.pressMoveMax
         touchHandler?.circularConfig = t.circularConfig
         remoteInputHandler?.holdThreshold = t.holdThreshold
+        remoteInputHandler?.doubleTapWindow = t.doubleTapWindow
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

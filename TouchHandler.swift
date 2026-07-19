@@ -57,6 +57,17 @@ class TouchHandler {
     private let cursorScale: CGFloat = 500.0
     /// Cursor speed multiplier (config: settings.cursorSpeed). Lower = less sensitive.
     var cursorSpeed: CGFloat = 1.0
+    /// Velocity-based pointer acceleration (config: settings.accel*). A gain layered on top of
+    /// cursorSpeed: below `accelLowSpeed` (slow, deliberate motion) the multiplier is `accelMin`
+    /// for precision; above `accelHighSpeed` (a quick flick) it caps at `accelMax` for reach;
+    /// smoothstep in between. Thresholds are in the SAME normalized units as the per-frame delta
+    /// magnitude (hypot(dx,dy)); the jitter deadzone is ~0.006, so the defaults sit between a slow
+    /// deliberate drag (~0.008) and a quick flick (~0.06), with the multiplier ≈1.0 at typical
+    /// medium move speed (~0.025) so mid-speed feel matches the old linear behavior.
+    var accelMin: CGFloat = 0.4
+    var accelMax: CGFloat = 2.6
+    var accelLowSpeed: CGFloat = 0.008
+    var accelHighSpeed: CGFloat = 0.06
     /// Per-frame jitter deadzone (config: settings.cursorDeadzone). Movement below this
     /// (normalized) is ignored so resting/pressing a finger doesn't drift the cursor.
     var cursorDeadzone: CGFloat = 0.006
@@ -467,9 +478,23 @@ class TouchHandler {
         }
     }
     
+    /// smoothstep(v, lo, hi): 0 below lo, 1 above hi, smooth (ease-in/out) in between.
+    private func smoothstep(_ v: CGFloat, _ lo: CGFloat, _ hi: CGFloat) -> CGFloat {
+        guard hi > lo else { return v < lo ? 0 : 1 }
+        let t = min(max((v - lo) / (hi - lo), 0), 1)
+        return t * t * (3 - 2 * t)
+    }
+
     private func moveCursor(deltaX: CGFloat, deltaY: CGFloat) -> (clampedX: Bool, clampedY: Bool) {
-        let scaledX = deltaX * cursorScale * cursorSpeed
-        let scaledY = -deltaY * cursorScale * cursorSpeed
+        // Velocity-based acceleration: slow finger motion → precise (accelMin), fast → reach
+        // (accelMax), smooth between. v is the per-frame delta magnitude (same normalized units
+        // as the deadzone). Layered on top of cursorSpeed; ≈1.0 at typical medium move speed.
+        let v = hypot(deltaX, deltaY)
+        let t = smoothstep(v, accelLowSpeed, accelHighSpeed)
+        let accelMul = accelMin + (accelMax - accelMin) * t
+        let effectiveSpeed = cursorSpeed * accelMul
+        let scaledX = deltaX * cursorScale * effectiveSpeed
+        let scaledY = -deltaY * cursorScale * effectiveSpeed
 
         var clamped = (clampedX: false, clampedY: false)
 

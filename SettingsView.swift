@@ -15,6 +15,7 @@ struct SettingsView: View {
             header
             Form {
                 cursorSection
+                accelerationSection
                 clickSection
                 circularSection
                 buttonsSection
@@ -22,7 +23,7 @@ struct SettingsView: View {
             }
             .formStyle(.grouped)
         }
-        .frame(width: 452, height: 860)
+        .frame(width: 452, height: 980)
     }
 
     // MARK: - Header
@@ -85,6 +86,31 @@ struct SettingsView: View {
         }
     }
 
+    private var accelerationSection: some View {
+        Section {
+            slider(icon: "tortoise.fill", title: "Slow-move factor",
+                   value: $model.tune.accelMin, range: 0.2...1.0,
+                   minIcon: "tortoise.fill", maxIcon: "cursorarrow.motionlines",
+                   display: { String(format: "%.2f×", $0) })
+            slider(icon: "hare.fill", title: "Fast-move factor",
+                   value: $model.tune.accelMax, range: 1.0...4.0,
+                   minIcon: "cursorarrow.motionlines", maxIcon: "hare.fill",
+                   display: { String(format: "%.2f×", $0) })
+            slider(icon: "arrow.down.forward", title: "Slow threshold",
+                   value: $model.tune.accelLowSpeed, range: 0.002...0.03,
+                   minIcon: "tortoise.fill", maxIcon: "hare.fill",
+                   display: { String(format: "%.0f", $0 * 1000) })
+            slider(icon: "arrow.up.forward", title: "Fast threshold",
+                   value: $model.tune.accelHighSpeed, range: 0.02...0.12,
+                   minIcon: "tortoise.fill", maxIcon: "hare.fill",
+                   display: { String(format: "%.0f", $0 * 1000) })
+        } header: {
+            Text("Pointer Acceleration")
+        } footer: {
+            Text("Slow finger motion moves the cursor less (precision); fast motion moves it more (reach), scaling on top of Speed. The two thresholds mark where the slow and fast ends kick in — below the slow threshold the factor is the slow-move factor, above the fast threshold it's the fast-move factor, smooth between.")
+        }
+    }
+
     private var clickSection: some View {
         Section {
             slider(icon: "hand.tap.fill", title: "Press sensitivity",
@@ -108,10 +134,14 @@ struct SettingsView: View {
                    value: $model.tune.holdThreshold, range: 0.2...1.2,
                    minIcon: "hare.fill", maxIcon: "tortoise.fill",
                    display: { String(format: "%.1fs", $0) })
+            slider(icon: "hand.tap.fill", title: "Double-tap speed",
+                   value: $model.tune.doubleTapWindow, range: 0.15...0.6,
+                   minIcon: "hare.fill", maxIcon: "tortoise.fill",
+                   display: { String(format: "%.2fs", $0) })
         } header: {
             Text("Buttons")
         } footer: {
-            Text("How long to hold a button before its \u{201C}.hold\u{201D} long-press fires.")
+            Text("Long-press time: how long to hold a button before its \u{201C}.hold\u{201D} fires. Double-tap speed: the window for a second tap to trigger a \u{201C}.double\u{201D} binding instead of a second single press.")
         }
     }
 

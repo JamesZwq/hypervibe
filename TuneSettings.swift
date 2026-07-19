@@ -11,9 +11,14 @@ import Foundation
 struct TuneSettings: Codable, Equatable {
     var cursorSpeed: Double
     var cursorDeadzone: Double
+    var accelMin: Double
+    var accelMax: Double
+    var accelLowSpeed: Double
+    var accelHighSpeed: Double
     var clickRiseThreshold: Double
     var pressMoveMax: Double
     var holdThreshold: Double
+    var doubleTapWindow: Double
     var circularEnabled: Bool
     var circularMinRadius: Double
     var circularStartThreshold: Double
@@ -22,8 +27,9 @@ struct TuneSettings: Codable, Equatable {
     var circularInvert: Bool
 
     static let `default` = TuneSettings(
-        cursorSpeed: 0.6, cursorDeadzone: 0.006, clickRiseThreshold: 0.1, pressMoveMax: 0.025,
-        holdThreshold: 0.5, circularEnabled: true, circularMinRadius: 0.35,
+        cursorSpeed: 0.6, cursorDeadzone: 0.006, accelMin: 0.4, accelMax: 2.6,
+        accelLowSpeed: 0.008, accelHighSpeed: 0.06, clickRiseThreshold: 0.1, pressMoveMax: 0.025,
+        holdThreshold: 0.5, doubleTapWindow: 0.3, circularEnabled: true, circularMinRadius: 0.35,
         circularStartThreshold: 0.35, circularPixelsPerRadian: 160, circularScrollEase: 0.3,
         circularInvert: false)
 
@@ -31,9 +37,14 @@ struct TuneSettings: Codable, Equatable {
     init(seed s: Config.Settings) {
         cursorSpeed = s.cursorSpeed
         cursorDeadzone = s.cursorDeadzone
+        accelMin = s.accelMin
+        accelMax = s.accelMax
+        accelLowSpeed = s.accelLowSpeed
+        accelHighSpeed = s.accelHighSpeed
         clickRiseThreshold = s.clickRiseThreshold
         pressMoveMax = s.pressMoveMax
         holdThreshold = s.holdThreshold
+        doubleTapWindow = s.doubleTapWindow
         circularEnabled = s.circularScroll.enabled
         circularMinRadius = s.circularScroll.minRadius
         circularStartThreshold = s.circularScroll.startThreshold
@@ -42,15 +53,21 @@ struct TuneSettings: Codable, Equatable {
         circularInvert = s.circularScroll.invert
     }
 
-    init(cursorSpeed: Double, cursorDeadzone: Double, clickRiseThreshold: Double,
-         pressMoveMax: Double, holdThreshold: Double, circularEnabled: Bool,
+    init(cursorSpeed: Double, cursorDeadzone: Double, accelMin: Double, accelMax: Double,
+         accelLowSpeed: Double, accelHighSpeed: Double, clickRiseThreshold: Double,
+         pressMoveMax: Double, holdThreshold: Double, doubleTapWindow: Double, circularEnabled: Bool,
          circularMinRadius: Double, circularStartThreshold: Double, circularPixelsPerRadian: Double,
          circularScrollEase: Double, circularInvert: Bool) {
         self.cursorSpeed = cursorSpeed
         self.cursorDeadzone = cursorDeadzone
+        self.accelMin = accelMin
+        self.accelMax = accelMax
+        self.accelLowSpeed = accelLowSpeed
+        self.accelHighSpeed = accelHighSpeed
         self.clickRiseThreshold = clickRiseThreshold
         self.pressMoveMax = pressMoveMax
         self.holdThreshold = holdThreshold
+        self.doubleTapWindow = doubleTapWindow
         self.circularEnabled = circularEnabled
         self.circularMinRadius = circularMinRadius
         self.circularStartThreshold = circularStartThreshold
