@@ -2,12 +2,15 @@
 //  Brightness.swift
 //  HyperVibe (config engine integration)
 //
-//  Display backlight control. Two mechanisms:
-//   • READ current brightness via the private DisplayServices framework (dlsym'd, no linker flag) —
-//     used only to tell whether we're already at minimum.
-//   • SET brightness by synthesizing the hardware brightness keys (NX_KEYTYPE_BRIGHTNESS_UP/DOWN),
-//     exactly like pressing F1/F2 — this moves EVERY display (including external ones that
-//     DisplayServicesSetBrightness silently misses), notch by notch.
+//  Dim / restore ALL displays by synthesizing the hardware brightness keys
+//  (NX_KEYTYPE_BRIGHTNESS_UP/DOWN, as NX_SYSDEFINED subtype-8 events) — exactly like pressing
+//  F1/F2, so every display moves (including externals that DisplayServicesSetBrightness misses),
+//  one notch at a time (a gradual dim/restore).
+//
+//  "Should we restore?" is decided on the MAIN thread by BOTH an `isDimmed` flag (for dims WE did)
+//  AND a live brightness read via DisplayServices (so a manual/keyboard-dimmed screen is also
+//  restored when you touch the remote). Reading must be on main — off the trackpad's background
+//  callback thread the read is unreliable, which is why touch didn't restore before.
 //
 
 import Foundation
@@ -15,8 +18,9 @@ import CoreGraphics
 import AppKit
 
 enum Brightness {
+    private static var isDimmed = false
 
-    // MARK: - Read (DisplayServices)
+    // MARK: - Read current brightness (DisplayServices, dlsym'd — no linker flag)
 
     private typealias GetFn = @convention(c) (CGDirectDisplayID, UnsafeMutablePointer<Float>) -> Int32
     private static let handle: UnsafeMutableRawPointer? =
@@ -25,34 +29,41 @@ enum Brightness {
         guard let h = handle, let p = dlsym(h, "DisplayServicesGetBrightness") else { return nil }
         return unsafeBitCast(p, to: GetFn.self)
     }()
-
-    /// The main display's current brightness (0...1), or nil if it can't be read.
-    static func mainValue() -> Float? {
+    private static func mainValue() -> Float? {
         guard let getBrightness = getBrightness else { return nil }
         var v: Float = 0
         return getBrightness(CGMainDisplayID(), &v) == 0 ? v : nil
     }
 
-    // MARK: - Set (synthesized brightness keys — moves ALL displays like the keyboard does)
+    // MARK: - Set via synthesized brightness keys (moves every display, notch by notch)
 
     private static let brightnessUp:   Int32 = 2   // NX_KEYTYPE_BRIGHTNESS_UP
     private static let brightnessDown: Int32 = 3   // NX_KEYTYPE_BRIGHTNESS_DOWN
     private static let notches = 16                // full brightness range in key steps
 
-    /// Dim every display to minimum by tapping the brightness-down key `notches` times.
-    static func dimToMin()     { DispatchQueue.main.async { rampKey(brightnessDown, remaining: notches) } }
-    /// Raise every display to maximum by tapping the brightness-up key `notches` times.
-    static func restoreToMax() { DispatchQueue.main.async { rampKey(brightnessUp,   remaining: notches) } }
+    /// Dim every display to minimum (Power button). Marks us dimmed for the restore guard.
+    static func dimToMin() {
+        isDimmed = true
+        DispatchQueue.main.async { rampKey(brightnessDown, remaining: notches) }
+    }
 
-    /// If the main display is at/near minimum brightness (below `threshold`), restore ALL displays
-    /// to maximum and return true; otherwise do nothing. The "only restore when at minimum" guard —
-    /// a normal-brightness press never jumps to max.
-    @discardableResult
-    static func restoreIfDimmed(threshold: Float = 0.05) -> Bool {
-        guard let value = mainValue(), value < threshold else { return false }
-        restoreToMax()
-        rmDebug("💡 brightness: restore → max (main was \(value))")
-        return true
+    /// Raise every display back to maximum (one notch at a time) and clear the dimmed flag.
+    static func restoreToMax() {
+        isDimmed = false
+        DispatchQueue.main.async { rampKey(brightnessUp, remaining: notches) }
+    }
+
+    /// If the displays are currently at/near minimum brightness — either because WE dimmed them
+    /// (flag) OR because they were dimmed some other way (live read < `threshold`) — restore to max.
+    /// A normal press at normal brightness (flag clear + read above threshold) is a no-op.
+    static func restoreIfDimmed(threshold: Float = 0.05) {
+        let check = {
+            let dimmed = isDimmed || (mainValue().map { $0 < threshold } ?? false)
+            guard dimmed else { return }
+            restoreToMax()
+            rmDebug("💡 brightness: restore → max")
+        }
+        if Thread.isMainThread { check() } else { DispatchQueue.main.async(execute: check) }
     }
 
     /// Tap the key once per notch, spaced out on the main runloop — rapid-fire system events get
