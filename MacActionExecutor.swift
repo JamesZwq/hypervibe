@@ -15,6 +15,7 @@ final class MacActionExecutor: ActionExecutor {
     private let media = MediaController()
 
     func execute(_ action: Action, payload: EventPayload?) {
+        rmDebug("⚙️ action: \(action)")
         switch action {
         case .keystroke(let keys):
             Keys.synthesize(keys)

@@ -105,5 +105,10 @@ enum KeyMap {
         "delete": kVK_Delete, "backspace": kVK_Delete,
         "home": kVK_Home, "end": kVK_End,
         "pageup": kVK_PageUp, "pagedown": kVK_PageDown,
+        // Punctuation. Braces { } are Shift + [ ] — write them as e.g. "cmd+shift+[".
+        "[": kVK_ANSI_LeftBracket, "]": kVK_ANSI_RightBracket,
+        "-": kVK_ANSI_Minus, "=": kVK_ANSI_Equal, "`": kVK_ANSI_Grave,
+        ";": kVK_ANSI_Semicolon, "'": kVK_ANSI_Quote, "\\": kVK_ANSI_Backslash,
+        ",": kVK_ANSI_Comma, ".": kVK_ANSI_Period, "/": kVK_ANSI_Slash,
     ]
 }
