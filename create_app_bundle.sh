@@ -24,6 +24,18 @@ mkdir -p "${APP_BUNDLE}/Contents/Resources"
 # Copy executable
 cp "$BINARY_NAME" "${APP_BUNDLE}/Contents/MacOS/$APP_NAME"
 
+# Generate the app icon if it's missing (it's a build artifact — .icns is git-ignored).
+if [ ! -f "HyperVibe.icns" ] && [ -f "tools/make_app_icon.swift" ]; then
+    echo "Generating app icon..."
+    TMP_ICONSET="$(mktemp -d)/HyperVibe.iconset"
+    if swift tools/make_app_icon.swift "$TMP_ICONSET" >/dev/null 2>&1 \
+        && iconutil -c icns "$TMP_ICONSET" -o "HyperVibe.icns" 2>/dev/null; then
+        echo "App icon generated"
+    else
+        echo "Icon generation skipped (swift/iconutil unavailable)"
+    fi
+fi
+
 # Copy icon if it exists
 if [ -f "HyperVibe.icns" ]; then
     cp "HyperVibe.icns" "${APP_BUNDLE}/Contents/Resources/HyperVibe.icns"
@@ -37,6 +49,12 @@ fi
 if [ -d "Resources" ]; then
     cp Resources/MenuBarIcon*.png "${APP_BUNDLE}/Contents/Resources/" 2>/dev/null || true
     echo "Menu bar icons added to app bundle"
+fi
+
+# Copy the 3rd-gen remote STL (used by the Layout tab's metallic 3D model)
+if [ -f "Resources/SiriRemote.stl" ]; then
+    cp "Resources/SiriRemote.stl" "${APP_BUNDLE}/Contents/Resources/SiriRemote.stl"
+    echo "3D remote model (SiriRemote.stl) added to app bundle"
 fi
 
 # Create proper Info.plist with all required keys
