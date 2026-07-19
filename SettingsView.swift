@@ -71,7 +71,7 @@ struct SettingsView: View {
     private var cursorSection: some View {
         Section {
             slider(icon: "cursorarrow.motionlines", title: "Speed",
-                   value: $model.tune.cursorSpeed, range: 0.1...2.0,
+                   value: $model.tune.cursorSpeed, range: 0.1...3.0,
                    minIcon: "tortoise.fill", maxIcon: "hare.fill",
                    display: { String(format: "%.2f×", $0) })
             slider(icon: "hand.raised.fill", title: "Steadiness",

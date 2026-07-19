@@ -58,32 +58,35 @@ enum Keys {
             NSLog("[siriRemote] unknown keystroke '\(combo)'"); return
         }
         let src = CGEventSource(stateID: .combinedSessionState)
+        var f: CGEventFlags = []
+
+        // Press modifiers as REAL key events (not just flags) so system-level shortcuts like
+        // Spaces / Mission Control — which read whether the modifier is actually held — respond.
+        for m in parsed.mods {
+            f.insert(m.flag)
+            let e = CGEvent(keyboardEventSource: src, virtualKey: m.keyCode, keyDown: true)
+            e?.flags = f
+            e?.post(tap: .cghidEventTap)
+        }
 
         if let mainKey = parsed.mainKey {
-            // Normal shortcut: modifiers ride as flags on the main key event.
             let down = CGEvent(keyboardEventSource: src, virtualKey: mainKey, keyDown: true)
-            down?.flags = parsed.flags
+            down?.flags = f
             let up = CGEvent(keyboardEventSource: src, virtualKey: mainKey, keyDown: false)
-            up?.flags = parsed.flags
+            up?.flags = f
             down?.post(tap: .cghidEventTap)
             up?.post(tap: .cghidEventTap)
         } else {
-            // Modifier-only chord (e.g. "rctrl+rcmd+ropt"): press all modifiers, hold briefly so a
-            // hyperkey-aware tool can see them together, then release in reverse.
-            var f: CGEventFlags = []
-            for m in parsed.mods {
-                f.insert(m.flag)
-                let e = CGEvent(keyboardEventSource: src, virtualKey: m.keyCode, keyDown: true)
-                e?.flags = f
-                e?.post(tap: .cghidEventTap)
-            }
+            // Modifier-only chord (e.g. "rctrl+rcmd+ropt"): hold briefly so a hyperkey tool sees it.
             usleep(30000)
-            for m in parsed.mods.reversed() {
-                f.remove(m.flag)
-                let e = CGEvent(keyboardEventSource: src, virtualKey: m.keyCode, keyDown: false)
-                e?.flags = f
-                e?.post(tap: .cghidEventTap)
-            }
+        }
+
+        // Release modifiers in reverse order.
+        for m in parsed.mods.reversed() {
+            f.remove(m.flag)
+            let e = CGEvent(keyboardEventSource: src, virtualKey: m.keyCode, keyDown: false)
+            e?.flags = f
+            e?.post(tap: .cghidEventTap)
         }
     }
 }
