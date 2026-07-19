@@ -58,14 +58,17 @@ enum ConfigStore {
 
       "modes": {
         "global": {
-          // Examples (uncomment to try):
-          // "button.tv":   { "action": "shell", "command": "open -a Safari" },
-          // "button.menu": { "action": "mode", "to": "keynote" }
+          // Click-ring → arrow keys (works out of the box):
+          "ring.up":    { "action": "keystroke", "keys": "up" },
+          "ring.down":  { "action": "keystroke", "keys": "down" },
+          "ring.left":  { "action": "keystroke", "keys": "left" },
+          "ring.right": { "action": "keystroke", "keys": "right" }
+          // To add more, put a comma after the line above, then e.g.:
+          // ,"button.tv": { "action": "shell", "command": "open -a Safari" }
         }
-        // "vscode": { "inherits": "global",
-        //   "button.back": { "action": "keystroke", "keys": "cmd+[" } },
-        // "keynote": { "inherits": "global",
-        //   "button.menu": { "action": "mode", "to": "global" } }
+        // ,"keynote": { "inherits": "global",
+        //   "ring.right": { "action": "keystroke", "keys": "right" },
+        //   "ring.left":  { "action": "keystroke", "keys": "left" } }
       }
     }
     """

@@ -136,10 +136,12 @@ class RemoteInputHandler {
         }
 
         // Config engine overrides native mapping when it has a binding (tap, on press only).
-        if pressed, let controller = controller,
-           controller.handle(InputEvent(key: "button.\(buttonName)")) {
-            print("🔘 Button (config): \(buttonName)")
-            return
+        if pressed, let controller = controller {
+            let key = RemoteInputHandler.configKey(for: buttonName)
+            if controller.handle(InputEvent(key: key)) {
+                print("🔘 \(key) (config)")
+                return
+            }
         }
 
         let action = menuBarManager?.getMapping(for: buttonName) ?? ButtonAction.none
@@ -183,15 +185,31 @@ class RemoteInputHandler {
         }
     }
     
+    /// Map an identified HID button name to a config event key (`ring.*` for the
+    /// click-ring, `button.*` for everything else).
+    static func configKey(for buttonName: String) -> String {
+        switch buttonName {
+        case "ringUp":    return "ring.up"
+        case "ringDown":  return "ring.down"
+        case "ringLeft":  return "ring.left"
+        case "ringRight": return "ring.right"
+        default:          return "button.\(buttonName)"
+        }
+    }
+
     // MARK: - Button Identification
-    
+
     private func identifyButton(page: UInt32, usage: UInt32) -> String? {
         switch (page, usage) {
         // Generic Desktop Page (0x01)
         case (0x01, 0x86): return "menu"          // System Menu Main
         case (0x01, 0x40): return "menu"          // Menu (alternative)
         
-        // Consumer Page (0x0C)  
+        // Consumer Page (0x0C)
+        case (0x0C, 0x42): return "ringUp"        // Menu Up — click-ring up
+        case (0x0C, 0x43): return "ringDown"      // Menu Down — click-ring down
+        case (0x0C, 0x44): return "ringLeft"      // Menu Left — click-ring left
+        case (0x0C, 0x45): return "ringRight"     // Menu Right — click-ring right
         case (0x0C, 0x04): return "siri"          // Siri button (actual)
         case (0x0C, 0x60): return "tv"            // TV button (actual)
         case (0x0C, 0x80): return "select"        // Selection
