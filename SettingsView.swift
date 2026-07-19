@@ -31,7 +31,9 @@ struct SettingsView: View {
                 .formStyle(.grouped)
             case .layout:
                 if let config = model.config {
-                    LayoutView(config: config)
+                    LayoutView(config: config, onSave: { newConfig in
+                        try? ConfigStore.save(newConfig)   // atomic write → hot-reloads → refreshes model.config
+                    })
                 } else {
                     Spacer()
                     Text("Loading config…").foregroundStyle(.secondary)

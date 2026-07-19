@@ -14,9 +14,13 @@ import AppKit
 
 struct LayoutView: View {
     let config: Config
+    /// Persist an edited config (writes config.jsonc → hot-reloads). Nil = read-only (snapshots).
+    var onSave: ((Config) -> Void)? = nil
 
     @State private var selectedMode: String?
     @State private var highlightedKey: String?
+    /// The input row currently open in the editor panel (nil = nothing selected).
+    @State private var selectedKey: String?
 
     // The mode currently being viewed (falls back to the default if the selection is gone
     // after a hot-reload).
@@ -28,6 +32,13 @@ struct LayoutView: View {
     /// When false, the content is laid out without a ScrollView — needed for offscreen
     /// ImageRenderer snapshots (a ScrollView measures as empty when rendered headless).
     var scrolls: Bool = true
+
+    init(config: Config, onSave: ((Config) -> Void)? = nil, scrolls: Bool = true, initialSelected: String? = nil) {
+        self.config = config
+        self.onSave = onSave
+        self.scrolls = scrolls
+        _selectedKey = State(initialValue: initialSelected)
+    }
 
     var body: some View {
         Group {
@@ -46,6 +57,7 @@ struct LayoutView: View {
             hub
             legend
             stage
+            if selectedKey != nil, onSave != nil { editorPanel }
             foot
         }
         .padding(.bottom, 8)
@@ -162,7 +174,7 @@ struct LayoutView: View {
         HStack(alignment: .top, spacing: 18) {
             VStack(spacing: 13) {
                 RemoteView(highlightedKey: $highlightedKey)
-                Text("Aluminum Siri Remote (3rd gen). Hover a row → its button lights up.")
+                Text("Aluminum Siri Remote (3rd gen). Click an input to edit it.")
                     .font(.system(size: 11.5)).foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -215,11 +227,22 @@ struct LayoutView: View {
         }
         .padding(.horizontal, 16).padding(.vertical, 10)
         .contentShape(Rectangle())
-        .background(highlightedKey == row.hotspot ? Color.accentColor.opacity(0.08) : Color.clear)
+        .background(rowBackground(row))
         .onHover { hovering in
             if hovering { highlightedKey = row.hotspot }
             else if highlightedKey == row.hotspot { highlightedKey = nil }
         }
+        .onTapGesture {
+            guard onSave != nil else { return }
+            selectedKey = (selectedKey == row.key) ? nil : row.key
+            highlightedKey = row.hotspot
+        }
+    }
+
+    private func rowBackground(_ row: InputRow) -> Color {
+        if selectedKey == row.key { return Color.accentColor.opacity(0.16) }
+        if highlightedKey == row.hotspot { return Color.accentColor.opacity(0.07) }
+        return Color.clear
     }
 
     private func tag(_ r: Resolved) -> some View {
@@ -239,7 +262,7 @@ struct LayoutView: View {
     // MARK: - Foot
 
     private var foot: some View {
-        Text("Reads your live config.jsonc. Read-only map for now — clicking a row to re-assign is the next step.")
+        Text("Click any input to edit its Tap / Double-tap / Hold actions — changes save to config.jsonc and apply live.")
             .font(.system(size: 11.5)).foregroundStyle(.secondary)
             .padding(.horizontal, 26).padding(.top, 6).padding(.bottom, 18)
     }
@@ -353,6 +376,203 @@ struct LayoutView: View {
         default:                      return "app.dashed"
         }
     }
+
+    // MARK: - Editor panel (edit the selected input's slots, per mode)
+
+    /// Base input key for the editor: strip a `.hold*`/`.double` suffix so selecting any row of an
+    /// input shows ALL its slots.
+    private var editBase: String {
+        guard let k = selectedKey else { return "" }
+        for suffix in [".hold3", ".hold2", ".hold", ".double"] where k.hasSuffix(suffix) {
+            return String(k.dropLast(suffix.count))
+        }
+        return k
+    }
+
+    private var sortedModeNames: [String] { config.modes.keys.sorted() }
+
+    private struct Slot { let slotKey: String; let label: String }
+    private func slots(for base: String) -> [Slot] {
+        guard base.hasPrefix("ring.") || base.hasPrefix("button.") else { return [] }
+        return [
+            Slot(slotKey: base,             label: "Tap"),
+            Slot(slotKey: base + ".double", label: "Double-tap"),
+            Slot(slotKey: base + ".hold",   label: "Hold"),
+            Slot(slotKey: base + ".hold2",  label: "Hold ··"),
+            Slot(slotKey: base + ".hold3",  label: "Hold ···"),
+        ]
+    }
+
+    private func saveSlot(_ slotKey: String, _ action: Action?) {
+        onSave?(config.setBinding(slotKey, to: action, inMode: mode))
+    }
+
+    static func inputName(_ key: String) -> String {
+        for g in groups { for r in g.rows where r.key == key { return r.name } }
+        switch key {
+        case "ring.up": return "Ring ↑"; case "ring.down": return "Ring ↓"
+        case "ring.left": return "Ring ←"; case "ring.right": return "Ring →"
+        default: return key
+        }
+    }
+
+    private var editorPanel: some View {
+        let base = editBase
+        let theSlots = slots(for: base)
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                Text("EDIT").font(.system(size: 11, weight: .heavy)).tracking(1).foregroundStyle(.secondary)
+                Text(Self.inputName(base)).font(.system(size: 13, weight: .semibold))
+                Text("in \(Self.inputName(mode) == mode ? mode : mode)")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                Spacer()
+                Button { selectedKey = nil } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                }.buttonStyle(.plain)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 11)
+            .background(Color.secondary.opacity(0.06))
+
+            if theSlots.isEmpty {
+                Text("This input is handled natively and isn't remappable here.")
+                    .font(.system(size: 12)).foregroundStyle(.secondary).padding(16)
+            } else {
+                ForEach(Array(theSlots.enumerated()), id: \.element.slotKey) { idx, slot in
+                    if idx > 0 { Divider() }
+                    HStack(spacing: 12) {
+                        Text(slot.label).font(.system(size: 13, weight: .medium))
+                            .frame(width: 92, alignment: .leading)
+                        ActionSlotEditor(
+                            action: config.modes[mode]?.bindings[slot.slotKey],
+                            modeNames: sortedModeNames,
+                            onChange: { saveSlot(slot.slotKey, $0) }
+                        )
+                        .id("\(mode)/\(slot.slotKey)")
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 9)
+                }
+            }
+        }
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.accentColor.opacity(0.4), lineWidth: 1))
+        .padding(.horizontal, 22).padding(.top, 4).padding(.bottom, 10)
+    }
+}
+
+/// Per-slot action editor: pick an action type + its params; commits via `onChange`.
+private struct ActionSlotEditor: View {
+    let action: Action?
+    let modeNames: [String]
+    let onChange: (Action?) -> Void
+
+    enum Kind: String, CaseIterable, Identifiable {
+        case none = "None", keystroke = "Keystroke", media = "Media", mouse = "Mouse",
+             launchApp = "Launch app", openURL = "Open URL", shell = "Shell",
+             applescript = "AppleScript", space = "Switch space", brightness = "Brightness",
+             layer = "Layer", mode = "Mode", repeatKey = "Repeat key"
+        var id: String { rawValue }
+    }
+
+    @State private var kind: Kind = .none
+    @State private var text: String = ""
+    @State private var pick: String = ""
+    @State private var value: Double = 0
+
+    var body: some View {
+        HStack(spacing: 8) {
+            // Computed binding: `set` runs only on a USER pick, so `load()` (which sets @State
+            // directly) never triggers a save → no reload loop.
+            Picker("", selection: Binding(get: { kind }, set: { kind = $0; defaultsForKind(); commit() })) {
+                ForEach(Kind.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .labelsHidden().frame(width: 128)
+            param
+        }
+        .onAppear(perform: load)
+    }
+
+    @ViewBuilder private var param: some View {
+        switch kind {
+        case .none:
+            Text("does nothing").foregroundStyle(.secondary).font(.system(size: 12))
+        case .keystroke, .repeatKey:
+            TextField("cmd+shift+t", text: $text).textFieldStyle(.roundedBorder).frame(width: 170).onSubmit(commit)
+        case .shell:
+            TextField("shell command", text: $text).textFieldStyle(.roundedBorder).frame(width: 240).onSubmit(commit)
+        case .applescript:
+            TextField("AppleScript source", text: $text).textFieldStyle(.roundedBorder).frame(width: 240).onSubmit(commit)
+        case .launchApp:
+            TextField("App name (e.g. Safari)", text: $text).textFieldStyle(.roundedBorder).frame(width: 200).onSubmit(commit)
+        case .openURL:
+            TextField("https://…", text: $text).textFieldStyle(.roundedBorder).frame(width: 220).onSubmit(commit)
+        case .media:  enumPicker(["playpause","next","previous","volup","voldown","mute"])
+        case .mouse:  enumPicker(["click","rightclick","scroll","move"])
+        case .space:  enumPicker(["left","right"])
+        case .layer, .mode: enumPicker(modeNames.isEmpty ? ["global"] : modeNames)
+        case .brightness:
+            HStack(spacing: 6) {
+                Slider(value: Binding(get: { value }, set: { value = $0; commit() }), in: 0...1).frame(width: 130)
+                Text("\(Int(value*100))%").font(.system(size: 11)).monospacedDigit().foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func enumPicker(_ options: [String]) -> some View {
+        Picker("", selection: Binding(get: { pick }, set: { pick = $0; commit() })) {
+            ForEach(options, id: \.self) { Text($0).tag($0) }
+        }
+        .labelsHidden().frame(width: 130)
+    }
+
+    private func load() {
+        guard let a = action else { kind = .none; return }
+        switch a {
+        case .keystroke(let k):       kind = .keystroke; text = k
+        case .media(let k):           kind = .media; pick = k
+        case .mouse(let op):          kind = .mouse; pick = op
+        case .launch(let app, let url):
+            if let app = app { kind = .launchApp; text = app } else { kind = .openURL; text = url ?? "" }
+        case .shell(let c):           kind = .shell; text = c
+        case .applescript(let s):     kind = .applescript; text = s
+        case .mode(let to):           kind = .mode; pick = to
+        case .layer(let n):           kind = .layer; pick = n
+        case .space(let d):           kind = .space; pick = d < 0 ? "left" : "right"
+        case .repeatKey(let k, _, _): kind = .repeatKey; text = k
+        case .brightness(let v):      kind = .brightness; value = v
+        }
+    }
+
+    private func defaultsForKind() {
+        switch kind {
+        case .media where pick.isEmpty: pick = "playpause"
+        case .mouse where pick.isEmpty: pick = "click"
+        case .space where pick.isEmpty: pick = "left"
+        case .layer, .mode: if pick.isEmpty { pick = modeNames.first ?? "global" }
+        default: break
+        }
+    }
+
+    private func commit() { onChange(build()) }
+
+    private func build() -> Action? {
+        switch kind {
+        case .none:        return nil
+        case .keystroke:   return text.isEmpty ? nil : .keystroke(keys: text)
+        case .repeatKey:   return text.isEmpty ? nil : .repeatKey(keys: text, delay: 0.3, interval: 0.045)
+        case .media:       return .media(key: pick.isEmpty ? "playpause" : pick)
+        case .mouse:       return .mouse(op: pick.isEmpty ? "click" : pick)
+        case .launchApp:   return text.isEmpty ? nil : .launch(app: text, url: nil)
+        case .openURL:     return text.isEmpty ? nil : .launch(app: nil, url: text)
+        case .shell:       return text.isEmpty ? nil : .shell(command: text)
+        case .applescript: return text.isEmpty ? nil : .applescript(script: text)
+        case .space:       return .space(direction: pick == "left" ? -1 : 1)
+        case .layer:       return pick.isEmpty ? nil : .layer(pick)
+        case .mode:        return pick.isEmpty ? nil : .mode(to: pick)
+        case .brightness:  return .brightness(value)
+        }
+    }
 }
 
 /// Headless renderer for the Layout tab — used by `HyperVibe --snapshot-layout <path>` so the UI
@@ -362,7 +582,7 @@ enum LayoutSnapshot {
     static func renderAndExit(to path: String) {
         let config = ConfigStore.loadConfig()
         let renderer = ImageRenderer(
-            content: LayoutView(config: config, scrolls: false)
+            content: LayoutView(config: config, scrolls: false)   // read-only render (Pickers don't draw offscreen)
                 .frame(width: 900)
                 .background(Color(nsColor: .windowBackgroundColor))
         )
