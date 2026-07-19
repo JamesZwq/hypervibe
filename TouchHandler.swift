@@ -265,6 +265,8 @@ class TouchHandler {
         
         // Handle touch start
         if lastTouchPosition == nil {
+            // Phase 0 capture: proves the clickpad emits multitouch data on this remote.
+            rmDebug("📱 touch begin: fingers=\(activeTouchCount) pos=(\(avgX), \(avgY))")
             hadMultipleFingersInSession = false
             touchStartTime = mach_absolute_time()
             touchStartPosition = currentPos
