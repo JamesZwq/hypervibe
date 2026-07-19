@@ -77,6 +77,11 @@ class TouchHandler {
 
     /// Fired on touch-up when a single-finger flick is detected. Dispatched on main.
     var onSwipe: ((SwipeDirection) -> Void)?
+    /// Fired on touch-up for a two-finger flick / tap. Dispatched on main.
+    var onTwoFingerSwipe: ((SwipeDirection) -> Void)?
+    var onTwoFingerTap: (() -> Void)?
+    /// Highest finger count seen this touch session (to classify two-finger gestures on lift).
+    private var sessionMaxFingers = 0
     private let reconnectInterval: TimeInterval = 2.0
     private let idleTimeout: TimeInterval = 90.0
     private let touchStarvationThreshold: TimeInterval = 15.0
@@ -285,7 +290,8 @@ class TouchHandler {
         if activeTouchCount >= 2 {
             hadMultipleFingersInSession = true
         }
-        
+        sessionMaxFingers = max(sessionMaxFingers, activeTouchCount)
+
         avgX /= Float(activeTouchCount)
         avgY /= Float(activeTouchCount)
         
@@ -298,6 +304,7 @@ class TouchHandler {
             hadMultipleFingersInSession = false
             circularActive = false
             circularDetector.reset()
+            sessionMaxFingers = activeTouchCount
             touchStartTime = mach_absolute_time()
             touchStartPosition = currentPos
             lastTouchPosition = currentPos
@@ -351,6 +358,15 @@ class TouchHandler {
         lastTouchCount = activeTouchCount
     }
     
+    /// Classify a flick delta into a swipe direction (nil if too diagonal).
+    /// y increases toward the top of the trackpad in MultitouchSupport coordinates.
+    private func swipeDirection(dx: CGFloat, dy: CGFloat) -> SwipeDirection? {
+        let absDx = abs(dx), absDy = abs(dy)
+        if absDx > absDy * swipeAxisRatio { return dx > 0 ? .right : .left }
+        if absDy > absDx * swipeAxisRatio { return dy > 0 ? .up : .down }
+        return nil
+    }
+
     private func handleTouchEnd() {
         guard lastTouchPosition != nil else { return }
 
@@ -364,15 +380,22 @@ class TouchHandler {
         if cursorController.isClickActive {
             return
         }
-        // Don't trigger tap after a multi-finger gesture (e.g. two-finger scroll)
-        if hadMultipleFingersInSession {
-            return
-        }
-        
         let duration = Self.machDeltaToSeconds(from: touchStartTime)
         let dx = (lastTouchPosition?.x ?? 0) - touchStartPosition.x
         let dy = (lastTouchPosition?.y ?? 0) - touchStartPosition.y
         let movement = hypot(dx, dy)
+
+        // Two-finger gestures: swipe2.* on a quick flick, tap.two on a quick tap.
+        // (A longer two-finger drag already scrolled live during the move.)
+        if sessionMaxFingers >= 2 {
+            if duration < swipeMaxDuration, movement > swipeMinDistance,
+               let direction = swipeDirection(dx: dx, dy: dy) {
+                DispatchQueue.main.async { [weak self] in self?.onTwoFingerSwipe?(direction) }
+            } else if duration < tapMaxDuration, movement < tapMaxDistance {
+                DispatchQueue.main.async { [weak self] in self?.onTwoFingerTap?() }
+            }
+            return
+        }
 
         // Swipe detection (flick). Fires before tap check; distance threshold is well above
         // tapMaxDistance, so a swipe can never also register as a tap.
