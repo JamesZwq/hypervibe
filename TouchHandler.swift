@@ -76,11 +76,12 @@ class TouchHandler {
     /// the resting baseline that counts as "pressing".
     var clickSteadiness: Double = 0.6
     private var contactBaseline: Float = 0
-    private var lastTimestamp: Double = 0
-    /// Low-pass–filtered angular velocity (rad/s) for circular scroll, so the natural speed
-    /// fluctuations of hand circling feel like uniform scrolling. Smaller factor = smoother.
-    private var smoothedOmega: Double = 0
-    var omegaSmoothing: Double = 0.15
+    /// Position-follow smoothing for circular scroll: total scroll always equals total rotation ×
+    /// speed (never over/under), and each frame eases toward that target so jittery hand circling
+    /// still scrolls smoothly. `scrollEase` = how fast it catches up (smaller = smoother/laggier).
+    private var rotationTotal: Double = 0
+    private var scrollEmitted: Double = 0
+    var scrollEase: Double = 0.3
     private let tapMaxDuration: Double = 0.22
     private let tapMaxDistance: CGFloat = 0.07
     // Swipe detection: velocity-gated single-finger flick. Distance > 35% of trackpad in < 350ms,
@@ -320,9 +321,9 @@ class TouchHandler {
             circularActive = false
             didScroll = false
             scrollRemainder = 0
-            smoothedOmega = 0
+            rotationTotal = 0
+            scrollEmitted = 0
             contactBaseline = contactSize
-            lastTimestamp = timestamp
             circularDetector.reset()
             sessionMaxFingers = activeTouchCount
             touchStartTime = mach_absolute_time()
@@ -335,8 +336,6 @@ class TouchHandler {
         // Calculate delta
         let deltaX = currentPos.x - (lastTouchPosition?.x ?? currentPos.x)
         let deltaY = currentPos.y - (lastTouchPosition?.y ?? currentPos.y)
-        let dt = timestamp - lastTimestamp
-        lastTimestamp = timestamp
 
         // Process based on finger count: 1 finger = cursor, 2 fingers = scroll
         if activeTouchCount == 1 && lastTouchCount == 1 {
@@ -345,11 +344,13 @@ class TouchHandler {
                 let radians = circularDetector.feed(x: Double(currentPos.x), y: Double(currentPos.y))
                 if radians != 0 { circularActive = true; didScroll = true }
                 if circularActive {
-                    // Scroll from the SMOOTHED angular velocity, not the jittery instantaneous one,
-                    // so uneven hand circling produces even scrolling.
-                    let instOmega = dt > 0 ? Double(radians) / dt : 0
-                    smoothedOmega += (instOmega - smoothedOmega) * omegaSmoothing
-                    emitCircularScroll(pixels: smoothedOmega * dt * circularConfig.pixelsPerRadian)
+                    // Position-follow: total scroll tracks total rotation exactly (never faster),
+                    // but eased each frame so jittery circling still scrolls smoothly.
+                    rotationTotal += Double(radians)
+                    let target = rotationTotal * circularConfig.pixelsPerRadian
+                    let step = (target - scrollEmitted) * scrollEase
+                    scrollEmitted += step
+                    emitCircularScroll(pixels: step)
                     lastTouchPosition = currentPos
                     lastTouchCount = activeTouchCount
                     return
@@ -374,6 +375,8 @@ class TouchHandler {
                 lastTouchCount = activeTouchCount
                 return
             }
+            rmDebug(String(format: "🖱 d=(%.4f,%.4f) contact=%.3f base=%.3f click=%d",
+                           deltaX, deltaY, contactSize, contactBaseline, cursorController.isClickActive ? 1 : 0))
             let clamped = moveCursor(deltaX: deltaX, deltaY: deltaY)
             // Only advance touch tracking if cursor wasn't clamped in that direction
             if let lastPos = lastTouchPosition {
