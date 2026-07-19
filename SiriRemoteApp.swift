@@ -18,6 +18,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var remoteInputHandler: RemoteInputHandler?
     private var mediaKeyInterceptor: MediaKeyInterceptor?
     private var touchHandler: TouchHandler?
+
+    // Config engine (SiriRemoteCore)
+    private var controller: Controller?
+    private var appWatcher: AppWatcher?
+    private var configWatcher: ConfigFileWatcher?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         print("🚀 HyperVibe starting...")
@@ -50,7 +55,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             cursorController: cursorController,
             menuBarManager: menuBarManager
         )
-        
+
+        // --- Config engine (SiriRemoteCore): config bindings override native button behavior;
+        //     unbound buttons fall through to HyperVibe's native mapping. ---
+        let engineController = Controller(
+            engine: MappingEngine(config: ConfigStore.loadConfig()),
+            executor: MacActionExecutor()
+        )
+        controller = engineController
+        remoteInputHandler?.controller = engineController
+        appWatcher = AppWatcher { [weak engineController] bundleID in
+            engineController?.frontmostAppChanged(bundleID: bundleID)
+        }
+        configWatcher = ConfigFileWatcher(url: ConfigStore.path) { [weak self] in
+            self?.controller?.reload(config: ConfigStore.loadConfig())
+            print("♻️ siriRemote config reloaded")
+        }
+        print("🧩 siriRemote config engine active — \(ConfigStore.path.path)")
+
         // Start touch handler for trackpad (before remote detection so we can wire the callback)
         touchHandler = TouchHandler(cursorController: cursorController)
         touchHandler?.scrollScale = menuBarManager.scrollSpeed.scale

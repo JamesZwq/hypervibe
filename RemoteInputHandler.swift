@@ -15,6 +15,10 @@ class RemoteInputHandler {
     private let cursorController: CursorController
     private weak var menuBarManager: MenuBarManager?
     private var devices: [IOHIDDevice] = []
+
+    /// Config engine (SiriRemoteCore). When it has a binding for a button, it wins;
+    /// otherwise we fall through to the native ButtonAction mapping below.
+    var controller: Controller?
     
     /// Called on any button activity; use to trigger trackpad re-scan after remote wake.
     var onButtonActivity: (() -> Void)?
@@ -129,6 +133,13 @@ class RemoteInputHandler {
         if pressed {
             RemoteInputHandler.lastProcessedButton = buttonName
             RemoteInputHandler.lastProcessedTime = mach_absolute_time()
+        }
+
+        // Config engine overrides native mapping when it has a binding (tap, on press only).
+        if pressed, let controller = controller,
+           controller.handle(InputEvent(key: "button.\(buttonName)")) {
+            print("🔘 Button (config): \(buttonName)")
+            return
         }
 
         let action = menuBarManager?.getMapping(for: buttonName) ?? ButtonAction.none

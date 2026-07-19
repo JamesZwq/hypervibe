@@ -18,6 +18,21 @@ SWIFT_FILES=(
     "MediaKeyInterceptor.swift"
     "TouchHandler.swift"
     "SystemVolume.swift"
+    # --- Config engine integration (this fork) ---
+    "KeyMap.swift"
+    "MacActionExecutor.swift"
+    "AppWatcher.swift"
+    "ConfigStore.swift"
+    "ConfigFileWatcher.swift"
+    # --- SiriRemoteCore (pure engine, compiled into the binary) ---
+    "../SiriRemoteCore/Sources/SiriRemoteCore/JSONC.swift"
+    "../SiriRemoteCore/Sources/SiriRemoteCore/Action.swift"
+    "../SiriRemoteCore/Sources/SiriRemoteCore/Config.swift"
+    "../SiriRemoteCore/Sources/SiriRemoteCore/ConfigLoader.swift"
+    "../SiriRemoteCore/Sources/SiriRemoteCore/Events.swift"
+    "../SiriRemoteCore/Sources/SiriRemoteCore/MappingEngine.swift"
+    "../SiriRemoteCore/Sources/SiriRemoteCore/Controller.swift"
+    "../SiriRemoteCore/Sources/SiriRemoteCore/Placeholder.swift"
 )
 
 # Find SDK path
