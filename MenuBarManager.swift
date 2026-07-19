@@ -244,9 +244,16 @@ class MenuBarManager {
         // Status
         statusMenuItem.isEnabled = false
         menu.addItem(statusMenuItem)
-        
+
         menu.addItem(NSMenuItem.separator())
-        
+
+        // Settings window
+        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
+
+        menu.addItem(NSMenuItem.separator())
+
         // Button Mappings submenu
         let mappingsItem = NSMenuItem(title: "Button Mappings", action: nil, keyEquivalent: "")
         let mappingsSubmenu = NSMenu()
@@ -329,6 +336,10 @@ class MenuBarManager {
         menu.addItem(quitItem)
     }
     
+    /// Set by AppDelegate to open the SwiftUI settings window.
+    var onOpenSettings: (() -> Void)?
+    @objc private func openSettings() { onOpenSettings?() }
+
     @objc private func changeMapping(_ sender: NSMenuItem) {
         guard let (buttonKey, action) = sender.representedObject as? (String, ButtonAction) else {
             return

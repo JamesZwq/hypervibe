@@ -18,6 +18,11 @@ SWIFT_FILES=(
     "MediaKeyInterceptor.swift"
     "TouchHandler.swift"
     "SystemVolume.swift"
+    # --- Settings UI (SwiftUI) ---
+    "TuneSettings.swift"
+    "SettingsModel.swift"
+    "SettingsView.swift"
+    "SettingsWindow.swift"
     # --- Config engine integration (this fork) ---
     "KeyMap.swift"
     "MacActionExecutor.swift"
@@ -50,9 +55,9 @@ echo "Using SDK: $SDK_PATH"
 # Detect architecture
 ARCH=$(uname -m)
 if [ "$ARCH" == "arm64" ]; then
-    TARGET="arm64-apple-macosx11.0"
+    TARGET="arm64-apple-macosx13.0"
 else
-    TARGET="x86_64-apple-macosx11.0"
+    TARGET="x86_64-apple-macosx13.0"
 fi
 
 echo "Building for: $TARGET"
@@ -70,6 +75,7 @@ swiftc \
     -framework AudioToolbox \
     -framework Carbon \
     -framework AppKit \
+    -framework SwiftUI \
     -framework MultitouchSupport
 
 if [ $? -eq 0 ]; then

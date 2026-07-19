@@ -23,6 +23,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var controller: Controller?
     private var appWatcher: AppWatcher?
     private var configWatcher: ConfigFileWatcher?
+
+    // Settings UI
+    private var settingsModel: SettingsModel?
+    private var settingsWindow: SettingsWindowController?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         print("🚀 HyperVibe starting...")
@@ -59,7 +63,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // --- Config engine (SiriRemoteCore): config bindings override native button behavior;
         //     unbound buttons fall through to HyperVibe's native mapping. ---
         let config = ConfigStore.loadConfig()
-        applyTouchSettings(config)
+
+        // Tuning: the Settings window (UserDefaults) is the source of truth, seeded once from
+        // the config file's settings block.
+        let model = SettingsModel(initial: TuneStore.load() ?? TuneSettings(seed: config.settings))
+        model.onApply = { [weak self] tune in self?.applyTune(tune) }
+        applyTune(model.tune)
+        settingsModel = model
+        let settingsWin = SettingsWindowController(model: model)
+        settingsWindow = settingsWin
+        menuBarManager.onOpenSettings = { [weak settingsWin] in settingsWin?.show() }
+
         let engineController = Controller(
             engine: MappingEngine(config: config),
             executor: MacActionExecutor()
@@ -70,9 +84,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             engineController?.frontmostAppChanged(bundleID: bundleID)
         }
         configWatcher = ConfigFileWatcher(url: ConfigStore.path) { [weak self] in
-            let cfg = ConfigStore.loadConfig()
-            self?.controller?.reload(config: cfg)
-            self?.applyTouchSettings(cfg)
+            self?.controller?.reload(config: ConfigStore.loadConfig())
             print("♻️ siriRemote config reloaded")
         }
         print("🧩 siriRemote config engine active — \(ConfigStore.path.path)")
@@ -110,6 +122,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async {
                 self?.remoteInputHandler?.setRemoteDevice(device)
                 self?.menuBarManager.updateConnectionStatus(connected: device != nil)
+                self?.settingsModel?.connected = (device != nil)
             }
         }
         remoteDetector?.startDetection()
@@ -131,10 +144,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     /// Push cursor-feel settings from config into the touch handler (also called on hot reload).
-    private func applyTouchSettings(_ config: Config) {
-        touchHandler?.cursorSpeed = CGFloat(config.settings.cursorSpeed)
-        touchHandler?.cursorDeadzone = CGFloat(config.settings.cursorDeadzone)
-        touchHandler?.circularConfig = config.settings.circularScroll
+    /// Push UI tuning values into the running touch handler (initial + on every settings change).
+    private func applyTune(_ t: TuneSettings) {
+        touchHandler?.cursorSpeed = CGFloat(t.cursorSpeed)
+        touchHandler?.cursorDeadzone = CGFloat(t.cursorDeadzone)
+        touchHandler?.circularConfig = t.circularConfig
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
