@@ -41,7 +41,9 @@ enum ConfigStore {
     static let defaultTemplate = """
     {
       // siriRemote config — edit and save; changes hot-reload live.
-      // Event keys: button.menu button.tv button.siri button.playPause
+      // Event keys: ring.up ring.down ring.left ring.right
+      //             swipe.up swipe.down swipe.left swipe.right
+      //             button.menu button.tv button.siri button.playPause
       //             button.volumeUp button.volumeDown button.back
       //             button.nextTrack button.prevTrack button.mute button.power
       // Actions: keystroke(keys) media(key) mouse(op) launch(app|url)
@@ -66,7 +68,9 @@ enum ConfigStore {
           "ring.left":  { "action": "keystroke", "keys": "left" },
           "ring.right": { "action": "keystroke", "keys": "right" }
           // To add more, put a comma after the line above, then e.g.:
-          // ,"button.tv": { "action": "shell", "command": "open -a Safari" }
+          // ,"button.tv":   { "action": "shell", "command": "open -a Safari" }
+          // ,"swipe.left":  { "action": "keystroke", "keys": "cmd+[" }
+          // ,"swipe.right": { "action": "keystroke", "keys": "cmd+]" }
         }
         // ,"keynote": { "inherits": "global",
         //   "ring.right": { "action": "keystroke", "keys": "right" },

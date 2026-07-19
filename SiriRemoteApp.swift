@@ -80,8 +80,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Start touch handler for trackpad (before remote detection so we can wire the callback)
         touchHandler = TouchHandler(cursorController: cursorController)
         touchHandler?.scrollScale = menuBarManager.scrollSpeed.scale
-        touchHandler?.onSwipe = { [weak menuBarManager] direction in
-            menuBarManager?.executeSwipe(direction)
+        touchHandler?.onSwipe = { [weak self] direction in
+            // Config engine wins if it binds swipe.<dir>; else fall back to native swipe.
+            let key = "swipe.\(direction.rawValue)"
+            if self?.controller?.handle(InputEvent(key: key)) == true {
+                print("👆 \(key) (config)")
+                return
+            }
+            self?.menuBarManager?.executeSwipe(direction)
         }
         touchHandler?.start()
         remoteInputHandler?.onButtonActivity = { [weak self] in
