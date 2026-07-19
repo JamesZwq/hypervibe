@@ -55,6 +55,11 @@ class TouchHandler {
     private var touchStartPosition: CGPoint = .zero
     
     private let cursorScale: CGFloat = 500.0
+    /// Cursor speed multiplier (config: settings.cursorSpeed). Lower = less sensitive.
+    var cursorSpeed: CGFloat = 1.0
+    /// Per-frame jitter deadzone (config: settings.cursorDeadzone). Movement below this
+    /// (normalized) is ignored so resting/pressing a finger doesn't drift the cursor.
+    var cursorDeadzone: CGFloat = 0.006
     private let tapMaxDuration: Double = 0.22
     private let tapMaxDistance: CGFloat = 0.07
     // Swipe detection: velocity-gated single-finger flick. Distance > 35% of trackpad in < 350ms,
@@ -298,6 +303,12 @@ class TouchHandler {
         
         // Process based on finger count: 1 finger = cursor, 2 fingers = scroll
         if activeTouchCount == 1 && lastTouchCount == 1 {
+            // Jitter deadzone: ignore sub-threshold frames and keep the anchor so slow
+            // deliberate motion still accumulates across frames, but tremor nets ~zero.
+            if hypot(deltaX, deltaY) < cursorDeadzone {
+                lastTouchCount = activeTouchCount
+                return
+            }
             let clamped = moveCursor(deltaX: deltaX, deltaY: deltaY)
             // Only advance touch tracking if cursor wasn't clamped in that direction
             if let lastPos = lastTouchPosition {
@@ -368,8 +379,8 @@ class TouchHandler {
     }
     
     private func moveCursor(deltaX: CGFloat, deltaY: CGFloat) -> (clampedX: Bool, clampedY: Bool) {
-        let scaledX = deltaX * cursorScale
-        let scaledY = -deltaY * cursorScale
+        let scaledX = deltaX * cursorScale * cursorSpeed
+        let scaledY = -deltaY * cursorScale * cursorSpeed
 
         var clamped = (clampedX: false, clampedY: false)
 

@@ -58,8 +58,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // --- Config engine (SiriRemoteCore): config bindings override native button behavior;
         //     unbound buttons fall through to HyperVibe's native mapping. ---
+        let config = ConfigStore.loadConfig()
+        applyTouchSettings(config)
         let engineController = Controller(
-            engine: MappingEngine(config: ConfigStore.loadConfig()),
+            engine: MappingEngine(config: config),
             executor: MacActionExecutor()
         )
         controller = engineController
@@ -68,7 +70,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             engineController?.frontmostAppChanged(bundleID: bundleID)
         }
         configWatcher = ConfigFileWatcher(url: ConfigStore.path) { [weak self] in
-            self?.controller?.reload(config: ConfigStore.loadConfig())
+            let cfg = ConfigStore.loadConfig()
+            self?.controller?.reload(config: cfg)
+            self?.applyTouchSettings(cfg)
             print("♻️ siriRemote config reloaded")
         }
         print("🧩 siriRemote config engine active — \(ConfigStore.path.path)")
@@ -109,6 +113,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         mediaKeyInterceptor?.start()
     }
     
+    /// Push cursor-feel settings from config into the touch handler (also called on hot reload).
+    private func applyTouchSettings(_ config: Config) {
+        touchHandler?.cursorSpeed = CGFloat(config.settings.cursorSpeed)
+        touchHandler?.cursorDeadzone = CGFloat(config.settings.cursorDeadzone)
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
     }
