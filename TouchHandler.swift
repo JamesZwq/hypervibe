@@ -111,6 +111,27 @@ class TouchHandler {
     var onSwipe: ((SwipeDirection) -> Void)?
     /// Fired on touch-up for a still two-finger tap (a two-finger drag scrolls instead).
     var onTwoFingerTap: (() -> Void)?
+    /// Fired when the cursor is "shaken" (rapid horizontal back-and-forth) — used to trigger the
+    /// find-my-cursor highlight. Dispatched on main. Wiring gates it on the enabled setting.
+    var onShake: (() -> Void)?
+
+    // MARK: - Shake-to-locate detection
+    // Feeds the per-frame horizontal movement (post-deadzone, PRE-accel) into a sign-reversal
+    // counter: each time dx flips sign while |dx| is above `shakeSpeedThreshold`, a reversal is
+    // recorded; `shakeReversals` reversals within `shakeWindow` seconds fire `onShake`. Debounced
+    // so it can't re-fire faster than `shakeDebounce`.
+    /// Reversals required within the window to count as a shake.
+    var shakeReversals: Int = 3
+    /// Sliding window (seconds) the reversals must fall within.
+    var shakeWindow: TimeInterval = 0.45
+    /// Minimum per-frame |dx| (normalized units, same as the deadzone) for a frame to count —
+    /// gates out slow drift so only a brisk shake triggers.
+    var shakeSpeedThreshold: CGFloat = 0.02
+    /// Minimum seconds between two shake fires.
+    private let shakeDebounce: TimeInterval = 0.4
+    private var shakeLastSign = 0
+    private var shakeReversalTimes: [Double] = []
+    private var shakeLastFireTime: Double = 0
     /// Highest finger count seen this touch session (to classify two-finger gestures on lift).
     private var sessionMaxFingers = 0
     private let reconnectInterval: TimeInterval = 2.0
@@ -340,6 +361,7 @@ class TouchHandler {
             scrollEmitted = 0
             lastContact = contactSize
             pressFreezeFrames = 0
+            shakeLastSign = 0
             circularDetector.reset()
             sessionMaxFingers = activeTouchCount
             touchStartTime = mach_absolute_time()
@@ -400,6 +422,8 @@ class TouchHandler {
                 lastTouchCount = activeTouchCount
                 return
             }
+            // Shake-to-locate: fed the post-deadzone, pre-accel horizontal delta of a real move.
+            detectShake(dx: deltaX, timestamp: timestamp)
             let clamped = moveCursor(deltaX: deltaX, deltaY: deltaY)
             // Only advance touch tracking if cursor wasn't clamped in that direction
             if let lastPos = lastTouchPosition {
@@ -509,6 +533,26 @@ class TouchHandler {
         return clamped
     }
     
+    /// Shake detector: count horizontal sign reversals of brisk motion; fire `onShake` when
+    /// `shakeReversals` land within `shakeWindow`. `now` is the MT frame timestamp (seconds).
+    private func detectShake(dx: CGFloat, timestamp now: Double) {
+        guard onShake != nil else { return }
+        // Only frames with brisk horizontal motion participate; slow drift neither counts nor
+        // resets the tracked sign.
+        guard abs(dx) >= shakeSpeedThreshold else { return }
+        let sign = dx > 0 ? 1 : -1
+        if shakeLastSign != 0 && sign != shakeLastSign {
+            shakeReversalTimes.append(now)
+            shakeReversalTimes.removeAll { now - $0 > shakeWindow }
+            if shakeReversalTimes.count >= shakeReversals && now - shakeLastFireTime > shakeDebounce {
+                shakeLastFireTime = now
+                shakeReversalTimes.removeAll()
+                DispatchQueue.main.async { [weak self] in self?.onShake?() }
+            }
+        }
+        shakeLastSign = sign
+    }
+
     /// Emit smooth circular scroll: carry the sub-pixel remainder so a steady rotation scrolls
     /// evenly instead of stepping between whole pixels.
     private func emitCircularScroll(pixels: Double) {

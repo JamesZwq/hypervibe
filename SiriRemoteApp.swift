@@ -18,6 +18,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var remoteInputHandler: RemoteInputHandler?
     private var mediaKeyInterceptor: MediaKeyInterceptor?
     private var touchHandler: TouchHandler?
+    private var cursorHighlighter: CursorHighlighter?
+    /// Mirror of the tune flag — the shake→highlight path is gated on this (see `applyTune`).
+    private var findCursorEnabled = true
 
     // Config engine (SiriRemoteCore)
     private var controller: Controller?
@@ -36,6 +39,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let idx = CommandLine.arguments.firstIndex(of: "--snapshot-layout"),
            idx + 1 < CommandLine.arguments.count {
             LayoutSnapshot.renderAndExit(to: CommandLine.arguments[idx + 1])
+            return
+        }
+
+        // Headless visual QC: `--test-highlight` shows the find-my-cursor highlight pinned at the
+        // main screen's center for ~4s (so it can be screenshotted), then exits — without seizing
+        // the remote, suspending rcd, or wiring up the rest of the app.
+        if CommandLine.arguments.contains("--test-highlight") {
+            NSApp.setActivationPolicy(.accessory)
+            let hl = CursorHighlighter()
+            cursorHighlighter = hl
+            hl.duration = 5.0   // outlast the 4s window so it stays fully lit for the screenshot
+            if let screen = NSScreen.main {
+                hl.flash(at: CGPoint(x: screen.frame.midX, y: screen.frame.midY))
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { exit(0) }
             return
         }
 
@@ -122,6 +140,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 print("👐 tap.two (config)")
             }
         }
+        // Find-my-cursor: a cursor shake flashes a highlight. Gated on the enabled setting
+        // (`findCursorEnabled`, kept in sync by applyTune) so it can be toggled live.
+        cursorHighlighter = CursorHighlighter()
+        touchHandler?.onShake = { [weak self] in
+            guard let self = self, self.findCursorEnabled else { return }
+            self.cursorHighlighter?.flash()
+        }
         touchHandler?.start()
         applyTune(model.tune)   // touchHandler + remoteInputHandler now exist — push the tuning
         remoteInputHandler?.onButtonActivity = { [weak self] in
@@ -169,6 +194,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         remoteInputHandler?.holdThreshold = t.holdThreshold
         remoteInputHandler?.doubleTapWindow = t.doubleTapWindow
         remoteInputHandler?.spacesModeWindow = t.spacesModeWindow
+        findCursorEnabled = t.findCursorEnabled
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

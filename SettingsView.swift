@@ -107,10 +107,13 @@ struct SettingsView: View {
                    value: $model.tune.cursorDeadzone, range: 0.0...0.02,
                    minIcon: "scribble.variable", maxIcon: "hand.raised.fill",
                    display: { String(format: "%.0f", $0 * 1000) })
+            Toggle(isOn: $model.tune.findCursorEnabled) {
+                rowLabel("Find cursor on shake", "cursorarrow.rays")
+            }
         } header: {
             Text("Cursor")
         } footer: {
-            Text("Higher steadiness ignores finger jitter, so it's easier to hold still and click.")
+            Text("Higher steadiness ignores finger jitter, so it's easier to hold still and click. Find cursor on shake flashes a ring around the pointer when you rapidly shake it back and forth.")
         }
     }
 

@@ -17,6 +17,7 @@ SWIFT_FILES=(
     "MediaController.swift"
     "MediaKeyInterceptor.swift"
     "TouchHandler.swift"
+    "CursorHighlighter.swift"
     "SystemVolume.swift"
     # --- Settings UI (SwiftUI) ---
     "TuneSettings.swift"
