@@ -123,6 +123,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func applyTouchSettings(_ config: Config) {
         touchHandler?.cursorSpeed = CGFloat(config.settings.cursorSpeed)
         touchHandler?.cursorDeadzone = CGFloat(config.settings.cursorDeadzone)
+        touchHandler?.circularConfig = config.settings.circularScroll
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

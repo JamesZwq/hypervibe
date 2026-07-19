@@ -49,9 +49,20 @@ enum ConfigStore {
       // Actions: keystroke(keys) media(key) mouse(op) launch(app|url)
       //          shell(command) applescript(script) mode(to)
       // A binding OVERRIDES native behavior; unbound buttons stay native.
-      // cursorSpeed: lower = slower/less sensitive. cursorDeadzone: higher = more jitter
-      // ignored, so it's easier to hold still and click (0.006 ≈ default).
-      "settings": { "defaultMode": "global", "cursorSpeed": 0.6, "cursorDeadzone": 0.006 },
+      "settings": {
+        "defaultMode": "global",
+        "cursorSpeed": 0.6,       // lower = slower / less sensitive
+        "cursorDeadzone": 0.006,  // higher = more jitter ignored, easier to hold & click
+        // Circular scroll (iPod wheel): circle a finger on the OUTER ring to scroll.
+        "circularScroll": {
+          "enabled": true,
+          "minRadius": 0.35,      // only touches this far from center count (outer ring)
+          "startThreshold": 0.5,  // radians to rotate before scrolling starts
+          "anglePerTick": 0.35,   // radians per scroll step (smaller = faster)
+          "pixelsPerTick": 12,    // scroll pixels per step (speed)
+          "invert": false         // flip if it scrolls the wrong way
+        }
+      },
 
       // Per-app auto-switch: frontmost app's bundle id -> mode name.
       "appProfiles": {

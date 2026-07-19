@@ -60,6 +60,12 @@ class TouchHandler {
     /// Per-frame jitter deadzone (config: settings.cursorDeadzone). Movement below this
     /// (normalized) is ignored so resting/pressing a finger doesn't drift the cursor.
     var cursorDeadzone: CGFloat = 0.006
+    /// Circular-scroll (iPod wheel) config; all params are config-tunable and hot-reloadable.
+    var circularConfig: CircularScrollConfig = .default {
+        didSet { circularDetector.update(config: circularConfig) }
+    }
+    private let circularDetector = CircularScrollDetector(config: .default)
+    private var circularActive = false
     private let tapMaxDuration: Double = 0.22
     private let tapMaxDistance: CGFloat = 0.07
     // Swipe detection: velocity-gated single-finger flick. Distance > 35% of trackpad in < 350ms,
@@ -290,6 +296,8 @@ class TouchHandler {
             // Phase 0 capture: proves the clickpad emits multitouch data on this remote.
             rmDebug("📱 touch begin: fingers=\(activeTouchCount) pos=(\(avgX), \(avgY))")
             hadMultipleFingersInSession = false
+            circularActive = false
+            circularDetector.reset()
             touchStartTime = mach_absolute_time()
             touchStartPosition = currentPos
             lastTouchPosition = currentPos
@@ -303,6 +311,17 @@ class TouchHandler {
         
         // Process based on finger count: 1 finger = cursor, 2 fingers = scroll
         if activeTouchCount == 1 && lastTouchCount == 1 {
+            // Circular scroll (outer ring) preempts the cursor once rotation passes threshold.
+            if circularConfig.enabled {
+                let ticks = circularDetector.feed(x: Double(currentPos.x), y: Double(currentPos.y))
+                if ticks != 0 { circularActive = true }
+                if circularActive {
+                    if ticks != 0 { emitCircularScroll(ticks: ticks) }
+                    lastTouchPosition = currentPos
+                    lastTouchCount = activeTouchCount
+                    return
+                }
+            }
             // Jitter deadzone: ignore sub-threshold frames and keep the anchor so slow
             // deliberate motion still accumulates across frames, but tremor nets ~zero.
             if hypot(deltaX, deltaY) < cursorDeadzone {
@@ -334,7 +353,13 @@ class TouchHandler {
     
     private func handleTouchEnd() {
         guard lastTouchPosition != nil else { return }
-        
+
+        // A circular-scroll gesture must not also fire a tap/swipe.
+        if circularActive {
+            circularActive = false
+            return
+        }
+
         // Don't trigger tap if physical click button is active
         if cursorController.isClickActive {
             return
@@ -395,6 +420,13 @@ class TouchHandler {
         return clamped
     }
     
+    private func emitCircularScroll(ticks: Int) {
+        let dy = Int32(ticks * circularConfig.pixelsPerTick)
+        DispatchQueue.main.async { [weak self] in
+            self?.cursorController.scroll(deltaX: 0, deltaY: dy)
+        }
+    }
+
     private func performScroll(deltaX: CGFloat, deltaY: CGFloat) {
         let scrollX = Int32(-deltaX * scrollScale)
         let scrollY = Int32(deltaY * scrollScale)
