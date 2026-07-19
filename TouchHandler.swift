@@ -71,6 +71,12 @@ class TouchHandler {
     private var didScroll = false
     /// Sub-pixel accumulator so smooth continuous rotation emits whole scroll pixels as they add up.
     private var scrollRemainder: Double = 0
+    /// Press-to-click freeze: contact grows when you press to click; freeze the cursor so the
+    /// growing thumb contact doesn't drift the pointer. Value is the contact-rise fraction over
+    /// the resting baseline that counts as "pressing".
+    var clickSteadiness: Double = 0.6
+    private var contactBaseline: Float = 0
+    private var lastTimestamp: Double = 0
     private let tapMaxDuration: Double = 0.22
     private let tapMaxDistance: CGFloat = 0.07
     // Swipe detection: velocity-gated single-finger flick. Distance > 35% of trackpad in < 350ms,
@@ -272,14 +278,16 @@ class TouchHandler {
         var avgX: Float = 0
         var avgY: Float = 0
         var activeTouchCount = 0
-        
+        var contactSize: Float = 0   // total contact "quality"/pressure — grows when you press to click
+
         for i in 0..<count {
             let touch = touchPtr[i]
-            
+
             // Only process active touches
             if touch.state == MTTouchStateTouching || touch.state == MTTouchStateMakeTouch {
                 avgX += touch.normalizedVector.position.x
                 avgY += touch.normalizedVector.position.y
+                contactSize += touch.zTotal
                 activeTouchCount += 1
             }
         }
@@ -303,12 +311,13 @@ class TouchHandler {
         
         // Handle touch start
         if lastTouchPosition == nil {
-            // Phase 0 capture: proves the clickpad emits multitouch data on this remote.
-            rmDebug("📱 touch begin: fingers=\(activeTouchCount) pos=(\(avgX), \(avgY))")
+            rmDebug("📱 touch begin: fingers=\(activeTouchCount) pos=(\(avgX), \(avgY)) contact=\(contactSize)")
             hadMultipleFingersInSession = false
             circularActive = false
             didScroll = false
             scrollRemainder = 0
+            contactBaseline = contactSize
+            lastTimestamp = timestamp
             circularDetector.reset()
             sessionMaxFingers = activeTouchCount
             touchStartTime = mach_absolute_time()
@@ -321,13 +330,21 @@ class TouchHandler {
         // Calculate delta
         let deltaX = currentPos.x - (lastTouchPosition?.x ?? currentPos.x)
         let deltaY = currentPos.y - (lastTouchPosition?.y ?? currentPos.y)
-        
+        let dt = timestamp - lastTimestamp
+        lastTimestamp = timestamp
+
         // Process based on finger count: 1 finger = cursor, 2 fingers = scroll
         if activeTouchCount == 1 && lastTouchCount == 1 {
             // Circular scroll (outer ring) preempts the cursor once rotation passes threshold.
             if circularConfig.enabled {
                 let radians = circularDetector.feed(x: Double(currentPos.x), y: Double(currentPos.y))
-                if radians != 0 { circularActive = true; didScroll = true }
+                if radians != 0 {
+                    circularActive = true; didScroll = true
+                    let r = hypot(Double(currentPos.x) - 0.5, Double(currentPos.y) - 0.5)
+                    let omega = dt > 0 ? radians / dt : 0
+                    rmDebug(String(format: "🔄 dθ=%.4f dt=%.4f ω=%.2f r=%.3f px=%.2f",
+                                   radians, dt, omega, r, radians * circularConfig.pixelsPerRadian))
+                }
                 if circularActive {
                     if radians != 0 { emitCircularScroll(radians: radians) }
                     lastTouchPosition = currentPos
@@ -335,6 +352,19 @@ class TouchHandler {
                     return
                 }
             }
+            // Press-to-click freeze: when a physical click is active, or the finger presses harder
+            // (contact grows past the resting baseline), don't move the cursor — the growing thumb
+            // contact would otherwise drag the pointer down as you press. Re-anchor so it resumes
+            // cleanly when the press ends.
+            let pressing = contactBaseline > 0 && contactSize > contactBaseline * Float(1 + clickSteadiness)
+            if cursorController.isClickActive || pressing {
+                lastTouchPosition = currentPos
+                lastTouchCount = activeTouchCount
+                return
+            }
+            // Track the resting contact level only while not pressing.
+            contactBaseline += (contactSize - contactBaseline) * 0.15
+
             // Jitter deadzone: ignore sub-threshold frames and keep the anchor so slow
             // deliberate motion still accumulates across frames, but tremor nets ~zero.
             if hypot(deltaX, deltaY) < cursorDeadzone {
