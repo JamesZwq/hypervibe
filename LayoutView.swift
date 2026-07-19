@@ -21,6 +21,8 @@ struct LayoutView: View {
     @State private var highlightedKey: String?
     /// The input row currently open in the editor panel (nil = nothing selected).
     @State private var selectedKey: String?
+    /// Illustration (interactive, editable) vs. metallic 3D model (showpiece).
+    @State private var show3D = false
     // "Add app / layer" popover state.
     @State private var showAdd = false
     @State private var addIsLayer = false
@@ -224,14 +226,50 @@ struct LayoutView: View {
 
     // MARK: - Stage: remote + list
 
+    /// A compact 2D-illustration ↔ 3D-model switch under the remote.
+    private var viewModeToggle: some View {
+        HStack(spacing: 0) {
+            modeChip("Illustration", "square.on.square", on: !show3D) { show3D = false }
+            modeChip("3D", "cube", on: show3D) { show3D = true }
+        }
+        .padding(3)
+        .background(Capsule().fill(Color.secondary.opacity(0.12)))
+        .overlay(Capsule().stroke(Color.secondary.opacity(0.14), lineWidth: 1))
+    }
+
+    private func modeChip(_ title: String, _ icon: String, on: Bool, _ act: @escaping () -> Void) -> some View {
+        Button(action: { withAnimation(.easeInOut(duration: 0.18)) { act() } }) {
+            HStack(spacing: 5) {
+                Image(systemName: icon).font(.system(size: 10, weight: .semibold))
+                Text(title).font(.system(size: 11.5, weight: .medium))
+            }
+            .padding(.horizontal, 12).padding(.vertical, 5)
+            .foregroundStyle(on ? Color.primary : Color.secondary)
+            .background(
+                Capsule().fill(on ? Color(nsColor: .controlBackgroundColor) : Color.clear)
+                    .shadow(color: on ? .black.opacity(0.12) : .clear, radius: 2, y: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
     private var stage: some View {
         HStack(alignment: .top, spacing: 18) {
             VStack(spacing: 13) {
-                RemoteView(highlightedKey: $highlightedKey, onSelect: onSave == nil ? nil : { key in
-                    selectedKey = key       // click a remote button → open its editor row
-                    highlightedKey = key
-                })
-                Text("Aluminum Siri Remote (3rd gen). Click an input to edit it.")
+                if show3D {
+                    RemoteScene3D()
+                        .frame(width: 190, height: 512)
+                        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                } else {
+                    RemoteView(highlightedKey: $highlightedKey, onSelect: onSave == nil ? nil : { key in
+                        selectedKey = key       // click a remote button → open its editor row
+                        highlightedKey = key
+                    })
+                }
+                viewModeToggle
+                Text(show3D
+                     ? "Metallic 3rd-gen model — drag to orbit. Switch to Illustration to edit."
+                     : "Aluminum Siri Remote (3rd gen). Click an input to edit it.")
                     .font(.system(size: 11.5)).foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)

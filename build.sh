@@ -25,6 +25,7 @@ SWIFT_FILES=(
     "SettingsView.swift"
     "SettingsWindow.swift"
     "RemoteView.swift"
+    "RemoteScene3D.swift"
     "LayoutView.swift"
     # --- Config engine integration (this fork) ---
     "KeyMap.swift"
@@ -82,6 +83,8 @@ swiftc \
     -framework Carbon \
     -framework AppKit \
     -framework SwiftUI \
+    -framework SceneKit \
+    -framework ModelIO \
     -framework MultitouchSupport
 
 if [ $? -eq 0 ]; then
