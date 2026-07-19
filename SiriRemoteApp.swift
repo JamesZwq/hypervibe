@@ -196,6 +196,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         touchHandler?.pressMoveMax = t.pressMoveMax
         touchHandler?.circularConfig = t.circularConfig
         remoteInputHandler?.holdThreshold = t.holdThreshold
+        remoteInputHandler?.holdThreshold2 = t.holdThreshold2
+        remoteInputHandler?.holdThreshold3 = t.holdThreshold3
         remoteInputHandler?.doubleTapWindow = t.doubleTapWindow
         remoteInputHandler?.spacesModeWindow = t.spacesModeWindow
         findCursorEnabled = t.findCursorEnabled

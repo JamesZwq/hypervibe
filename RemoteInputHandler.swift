@@ -19,11 +19,25 @@ class RemoteInputHandler {
     /// Config engine (SiriRemoteCore). Buttons are routed through it; unbound buttons do nothing.
     var controller: Controller?
 
-    /// Long-press: if a `<key>.hold` binding exists, hold past this many seconds fires it; a
-    /// short press fires the plain `<key>` on release. HID callbacks run on the main runloop.
+    /// Multi-stage long-press — RELEASE-TO-SELECT. If any of `<key>.hold`/`.hold2`/`.hold3` is
+    /// bound, a press schedules a timer for each BOUND stage at its threshold (holdThreshold =
+    /// stage 1, holdThreshold2 = stage 2, holdThreshold3 = stage 3). When a stage's timer elapses
+    /// it only RECORDS that the stage was reached (`deepestStage`) — it does NOT fire. Keep holding
+    /// to reach a deeper stage. On RELEASE, the deepest bound stage reached is fired; releasing
+    /// before stage 1 fires the normal tap/double instead. HID callbacks run on the main runloop.
+    /// (Consequence: a single `.hold` binding now fires on release-after-threshold, not at the
+    /// threshold — an intentional trade of the multi-stage model.)
     var holdThreshold: TimeInterval = 0.5
-    private var pendingHold: [String: DispatchWorkItem] = [:]
-    private var holdFired: Set<String> = []
+    var holdThreshold2: TimeInterval = 1.0
+    var holdThreshold3: TimeInterval = 1.6
+    private var holdStageTimers: [String: [DispatchWorkItem]] = [:]
+    private var deepestStage: [String: Int] = [:]
+
+    /// Momentary layer (Feature: LAYER): the HID button currently holding a `.layer` binding down.
+    /// Pressing a `.layer` key pushes its layer (Controller.pushLayer) and records the button here;
+    /// its release pops the layer. A newer layer press overwrites this, so the older button's
+    /// release is ignored (the newer layer stays until its own button releases).
+    private var layerButton: String?
 
     /// Double-tap: if a `<key>.double` binding exists, the single is HELD for `doubleTapWindow` to
     /// see whether a 2nd tap arrives. A lone tap fires `<key>` only after the window elapses; a
@@ -173,13 +187,15 @@ class RemoteInputHandler {
         routeButton(buttonName, pressed: pressed)
     }
 
-    /// Route a button press/release through the config engine. If a `<key>.hold` binding exists,
-    /// holding past `holdThreshold` fires `<key>.hold` and a short press fires `<key>` on release;
-    /// otherwise the tap fires immediately on press. Unbound events do nothing.
+    /// Route a button press/release through the config engine. Priority on press: Spaces Mode →
+    /// `.repeatKey` (auto-repeat) → `.layer` (momentary layer) → multi-stage long-press / tap.
+    /// Long-press is RELEASE-TO-SELECT (see the `holdThreshold`/`holdStageTimers` docs): a press
+    /// arms a timer per bound `.hold*` stage, each timer only records the stage reached, and the
+    /// deepest stage reached fires on release; a release before stage 1 fires the tap/double.
+    /// Unbound events do nothing.
     private func routeButton(_ buttonName: String, pressed: Bool) {
         guard let controller = controller else { return }
         let tapKey = RemoteInputHandler.configKey(for: buttonName)
-        let holdKey = tapKey + ".hold"
 
         // 1) Spaces Mode: while armed, the ring becomes a desktop switcher. Intercept on press,
         //    BEFORE any config dispatch, and consume so the normal binding doesn't also fire.
@@ -219,39 +235,98 @@ class RemoteInputHandler {
             return
         }
 
+        // 3) Momentary layer: a `.layer` binding acts like a shift key. Pressing it pushes a
+        //    second layer of bindings (resolved instead of the app mode) and CONSUMES the press —
+        //    the layer key itself fires nothing; the matching release pops it. Keys pressed while
+        //    it is held resolve in the layer automatically (Controller.handle/hasBinding/
+        //    resolvedAction all consult the active layer). A newer layer press replaces an older.
         if pressed {
-            guard controller.hasBinding(for: holdKey) else {
-                // No long-press binding → the tap completes on press. Fire the single immediately
+            if case let .layer(name)? = controller.resolvedAction(for: tapKey) {
+                controller.pushLayer(name)
+                layerButton = buttonName
+                print("🔘 \(tapKey) → layer '\(name)' (push)")
+                return
+            }
+        } else if layerButton == buttonName {
+            controller.popLayer()
+            layerButton = nil
+            print("🔘 \(tapKey) → layer (pop)")
+            return
+        }
+
+        // 4) Multi-stage long-press (RELEASE-TO-SELECT) + tap/double.
+        if pressed {
+            // Arm a timer for each BOUND hold stage; each only records the stage reached (it does
+            // NOT fire — see `holdStageTimers`). If no stage is bound the tap completes on press.
+            var items: [DispatchWorkItem] = []
+            for stage in 1...3 where controller.hasBinding(for: RemoteInputHandler.holdStageKey(tapKey, stage)) {
+                let work = DispatchWorkItem { [weak self] in
+                    guard let self = self else { return }
+                    self.deepestStage[buttonName] = max(self.deepestStage[buttonName] ?? 0, stage)
+                }
+                items.append(work)
+                DispatchQueue.main.asyncAfter(deadline: .now() + holdStageThreshold(stage), execute: work)
+            }
+            guard !items.isEmpty else {
+                // No `.hold*` binding → the tap completes on press: fire the single immediately
                 // (no added latency), or a `.double` if this is a quick 2nd tap.
                 fireTapOrDouble(buttonName, tapKey: tapKey)
                 return
             }
-            // Long-press exists → decide short vs long: fire hold at the threshold, tap on early release.
-            holdFired.remove(buttonName)
-            let work = DispatchWorkItem { [weak self] in
-                guard let self = self else { return }
-                self.pendingHold[buttonName] = nil
-                self.holdFired.insert(buttonName)
-                self.fireHold(controller: controller, holdKey: holdKey)
-            }
-            pendingHold[buttonName] = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + holdThreshold, execute: work)
+            deepestStage[buttonName] = 0
+            holdStageTimers[buttonName] = items
         } else {
-            // Release: if a pending hold hasn't fired yet, it was a short press → the tap completes
-            // here. Fire the single (or a `.double` if this is a quick 2nd tap).
-            if let work = pendingHold.removeValue(forKey: buttonName) {
-                work.cancel()
-                if !holdFired.contains(buttonName) {
-                    fireTapOrDouble(buttonName, tapKey: tapKey)
-                }
+            // Release-to-select: cancel remaining stage timers, then fire the deepest stage reached.
+            guard let items = holdStageTimers.removeValue(forKey: buttonName) else { return }
+            items.forEach { $0.cancel() }
+            let reached = deepestStage.removeValue(forKey: buttonName) ?? 0
+            if reached >= 1 {
+                fireHoldStage(controller: controller, tapKey: tapKey, reached: reached)
+            } else {
+                // Released before stage 1 → it was a tap: fire the single (or `.double` on a 2nd tap).
+                fireTapOrDouble(buttonName, tapKey: tapKey)
             }
-            holdFired.remove(buttonName)
         }
     }
 
-    /// Run a long-press (`<key>.hold`) action. `ring.up.hold` additionally toggles Spaces Mode:
-    /// the first long-press runs its config action (open Mission Control) and arms; a second
-    /// long-press while armed closes Mission Control (Escape) and disarms instead of re-opening.
+    /// Release-to-select: fire the deepest BOUND hold stage at or below `reached` (the deepest
+    /// stage whose threshold elapsed while the button was held). Stage 3 = `<key>.hold3`, stage
+    /// 2 = `<key>.hold2`, stage 1 = `<key>.hold`; falls back to a shallower bound stage if the
+    /// reached stage isn't bound (normally it is, since only bound stages arm a timer).
+    private func fireHoldStage(controller: Controller, tapKey: String, reached: Int) {
+        var stage = reached
+        while stage >= 1 {
+            let holdKey = RemoteInputHandler.holdStageKey(tapKey, stage)
+            if controller.hasBinding(for: holdKey) {
+                fireHold(controller: controller, holdKey: holdKey)
+                return
+            }
+            stage -= 1
+        }
+    }
+
+    /// The binding key for a hold stage: 1 = `<key>.hold`, 2 = `<key>.hold2`, 3 = `<key>.hold3`.
+    static func holdStageKey(_ tapKey: String, _ stage: Int) -> String {
+        switch stage {
+        case 2:  return tapKey + ".hold2"
+        case 3:  return tapKey + ".hold3"
+        default: return tapKey + ".hold"
+        }
+    }
+
+    /// The configured threshold (seconds) at which a hold stage is reached.
+    private func holdStageThreshold(_ stage: Int) -> TimeInterval {
+        switch stage {
+        case 2:  return holdThreshold2
+        case 3:  return holdThreshold3
+        default: return holdThreshold
+        }
+    }
+
+    /// Run a long-press (`<key>.hold*`) action, fired on release by `fireHoldStage`. `ring.up.hold`
+    /// additionally toggles Spaces Mode: the first long-press runs its config action (open Mission
+    /// Control) and arms; a second long-press while armed closes Mission Control (Escape) and
+    /// disarms instead of re-opening. (Arming now happens on release — see the release-to-select model.)
     private func fireHold(controller: Controller, holdKey: String) {
         if holdKey == "ring.up.hold" {
             if spacesModeActive {
@@ -509,7 +584,19 @@ class RemoteInputHandler {
         heldKeys.removeAll()
         buttonState.removeAll()
         stopAllKeyRepeats()   // don't leak auto-repeat timers if the remote disconnects mid-hold
+        cancelHoldStages()    // and don't leave release-to-select stage timers pending
         disarmSpacesMode()    // and don't leave Spaces Mode armed with no device attached
+        if layerButton != nil {   // and don't leave a momentary layer stuck active
+            controller?.popLayer()
+            layerButton = nil
+        }
+    }
+
+    /// Cancel all pending multi-stage hold timers and reset the reached-stage tracking.
+    private func cancelHoldStages() {
+        for (_, items) in holdStageTimers { items.forEach { $0.cancel() } }
+        holdStageTimers.removeAll()
+        deepestStage.removeAll()
     }
 
     private func postKey(keyCode: Int, flags: CGEventFlags, keyDown: Bool) {

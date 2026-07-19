@@ -41,8 +41,8 @@ final class MacActionExecutor: ActionExecutor {
             // Synthesize the hardware brightness keys so ALL displays move (DisplayServices misses
             // some externals). Low value → dim to minimum, high → restore to maximum.
             if value < 0.5 { Brightness.dimToMin() } else { Brightness.restoreToMax() }
-        case .mode:
-            break // handled inside Controller; never reaches the executor
+        case .mode, .layer:
+            break // handled inside Controller / RemoteInputHandler; never reaches the executor
         }
     }
 
