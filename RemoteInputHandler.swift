@@ -25,11 +25,13 @@ class RemoteInputHandler {
     private var pendingHold: [String: DispatchWorkItem] = [:]
     private var holdFired: Set<String> = []
 
-    /// Double-tap: if a `<key>.double` binding exists, a 2nd tap within `doubleTapWindow` fires it
-    /// instead of a 2nd single. The first tap's single is never delayed or suppressed — it fires
-    /// at once, exactly like today, so a `.double` binding adds zero latency to a single tap.
+    /// Double-tap: if a `<key>.double` binding exists, the single is HELD for `doubleTapWindow` to
+    /// see whether a 2nd tap arrives. A lone tap fires `<key>` only after the window elapses; a
+    /// quick 2nd tap cancels that pending single and fires `<key>.double` instead — so a double-tap
+    /// emits ONLY the double, never a single too. Keys with no `.double` binding fire the single
+    /// immediately (zero added latency).
     var doubleTapWindow: TimeInterval = 0.3
-    private var lastTapTime: [String: Date] = [:]
+    private var pendingSingle: [String: DispatchWorkItem] = [:]
     
     /// Called on any button activity; use to trigger trackpad re-scan after remote wake.
     var onButtonActivity: (() -> Void)?
@@ -184,21 +186,33 @@ class RemoteInputHandler {
         }
     }
 
-    /// Fire a completed tap of a button. If a `<key>.double` binding exists AND this tap lands
-    /// within `doubleTapWindow` of the previous one, fire the double instead of a 2nd single (and
-    /// reset so a 3rd tap starts fresh). Otherwise fire the single immediately — zero added latency
-    /// — and record the time. With no `.double` binding this is identical to firing the single.
+    /// Fire a completed tap. With no `<key>.double` binding the single fires immediately (zero
+    /// latency). With a `.double` binding the single is held for `doubleTapWindow`: the first tap
+    /// schedules `<key>`; a 2nd tap inside the window cancels that pending single and fires
+    /// `<key>.double` instead — so a double-tap emits ONLY the double, never a single too.
     private func fireTapOrDouble(_ buttonName: String, tapKey: String) {
         guard let controller = controller else { return }
         let doubleKey = tapKey + ".double"
-        let now = Date()
-        if controller.hasBinding(for: doubleKey),
-           now.timeIntervalSince(lastTapTime[buttonName] ?? .distantPast) < doubleTapWindow {
-            lastTapTime[buttonName] = .distantPast   // reset so a 3rd tap starts a fresh pair
+
+        // No double binding → nothing to disambiguate; fire the single now.
+        guard controller.hasBinding(for: doubleKey) else {
+            if controller.handle(InputEvent(key: tapKey)) { print("🔘 \(tapKey) (config)") }
+            return
+        }
+
+        if let pending = pendingSingle.removeValue(forKey: buttonName) {
+            // 2nd tap within the window → it's a double. Cancel the queued single, fire the double.
+            pending.cancel()
             if controller.handle(InputEvent(key: doubleKey)) { print("🔘 \(doubleKey) (config)") }
         } else {
-            lastTapTime[buttonName] = now
-            if controller.handle(InputEvent(key: tapKey)) { print("🔘 \(tapKey) (config)") }
+            // 1st tap → hold the single; fire it only if no 2nd tap arrives within the window.
+            let work = DispatchWorkItem { [weak self] in
+                guard let self = self, let controller = self.controller else { return }
+                self.pendingSingle[buttonName] = nil
+                if controller.handle(InputEvent(key: tapKey)) { print("🔘 \(tapKey) (config)") }
+            }
+            pendingSingle[buttonName] = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + doubleTapWindow, execute: work)
         }
     }
     
