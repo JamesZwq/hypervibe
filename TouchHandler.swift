@@ -77,6 +77,10 @@ class TouchHandler {
     var clickSteadiness: Double = 0.6
     private var contactBaseline: Float = 0
     private var lastTimestamp: Double = 0
+    /// Low-pass–filtered angular velocity (rad/s) for circular scroll, so the natural speed
+    /// fluctuations of hand circling feel like uniform scrolling. Smaller factor = smoother.
+    private var smoothedOmega: Double = 0
+    var omegaSmoothing: Double = 0.15
     private let tapMaxDuration: Double = 0.22
     private let tapMaxDistance: CGFloat = 0.07
     // Swipe detection: velocity-gated single-finger flick. Distance > 35% of trackpad in < 350ms,
@@ -316,6 +320,7 @@ class TouchHandler {
             circularActive = false
             didScroll = false
             scrollRemainder = 0
+            smoothedOmega = 0
             contactBaseline = contactSize
             lastTimestamp = timestamp
             circularDetector.reset()
@@ -338,15 +343,13 @@ class TouchHandler {
             // Circular scroll (outer ring) preempts the cursor once rotation passes threshold.
             if circularConfig.enabled {
                 let radians = circularDetector.feed(x: Double(currentPos.x), y: Double(currentPos.y))
-                if radians != 0 {
-                    circularActive = true; didScroll = true
-                    let r = hypot(Double(currentPos.x) - 0.5, Double(currentPos.y) - 0.5)
-                    let omega = dt > 0 ? radians / dt : 0
-                    rmDebug(String(format: "🔄 dθ=%.4f dt=%.4f ω=%.2f r=%.3f px=%.2f",
-                                   radians, dt, omega, r, radians * circularConfig.pixelsPerRadian))
-                }
+                if radians != 0 { circularActive = true; didScroll = true }
                 if circularActive {
-                    if radians != 0 { emitCircularScroll(radians: radians) }
+                    // Scroll from the SMOOTHED angular velocity, not the jittery instantaneous one,
+                    // so uneven hand circling produces even scrolling.
+                    let instOmega = dt > 0 ? Double(radians) / dt : 0
+                    smoothedOmega += (instOmega - smoothedOmega) * omegaSmoothing
+                    emitCircularScroll(pixels: smoothedOmega * dt * circularConfig.pixelsPerRadian)
                     lastTouchPosition = currentPos
                     lastTouchCount = activeTouchCount
                     return
@@ -466,10 +469,10 @@ class TouchHandler {
         return clamped
     }
     
-    /// Continuous, smooth circular scroll: convert this frame's rotation to pixels, carrying the
-    /// sub-pixel remainder so slow rotation still scrolls evenly instead of stepping.
-    private func emitCircularScroll(radians: Double) {
-        scrollRemainder += radians * circularConfig.pixelsPerRadian
+    /// Emit smooth circular scroll: carry the sub-pixel remainder so a steady rotation scrolls
+    /// evenly instead of stepping between whole pixels.
+    private func emitCircularScroll(pixels: Double) {
+        scrollRemainder += pixels
         let whole = scrollRemainder.rounded(.towardZero)
         guard whole != 0 else { return }
         scrollRemainder -= whole
