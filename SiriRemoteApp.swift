@@ -97,13 +97,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         touchHandler = TouchHandler(cursorController: cursorController)
         touchHandler?.scrollScale = menuBarManager.scrollSpeed.scale
         touchHandler?.onSwipe = { [weak self] direction in
-            // Config engine wins if it binds swipe.<dir>; else fall back to native swipe.
+            // Swipes are config-driven only. An unbound swipe does nothing — no native fallback,
+            // so HyperVibe's Claude-Code default swipe keys (e.g. right = Shift+Tab) no longer
+            // fire and cause the system beep. Bind swipe.<dir> in the config to use them.
             let key = "swipe.\(direction.rawValue)"
             if self?.controller?.handle(InputEvent(key: key)) == true {
                 print("👆 \(key) (config)")
-                return
             }
-            self?.menuBarManager?.executeSwipe(direction)
         }
         touchHandler?.onTwoFingerTap = { [weak self] in
             if self?.controller?.handle(InputEvent(key: "tap.two")) == true {
