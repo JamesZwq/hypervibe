@@ -14,14 +14,13 @@ struct TuneSettings: Codable, Equatable {
     var circularEnabled: Bool
     var circularMinRadius: Double
     var circularStartThreshold: Double
-    var circularAnglePerTick: Double
-    var circularPixelsPerTick: Double   // Double for smooth sliders; rounded to Int on apply
+    var circularPixelsPerRadian: Double
     var circularInvert: Bool
 
     static let `default` = TuneSettings(
         cursorSpeed: 0.6, cursorDeadzone: 0.006,
-        circularEnabled: true, circularMinRadius: 0.35, circularStartThreshold: 0.5,
-        circularAnglePerTick: 0.35, circularPixelsPerTick: 12, circularInvert: false)
+        circularEnabled: true, circularMinRadius: 0.35, circularStartThreshold: 0.35,
+        circularPixelsPerRadian: 160, circularInvert: false)
 
     /// Seed from the config file's settings block (used on first run only).
     init(seed s: Config.Settings) {
@@ -30,21 +29,19 @@ struct TuneSettings: Codable, Equatable {
         circularEnabled = s.circularScroll.enabled
         circularMinRadius = s.circularScroll.minRadius
         circularStartThreshold = s.circularScroll.startThreshold
-        circularAnglePerTick = s.circularScroll.anglePerTick
-        circularPixelsPerTick = Double(s.circularScroll.pixelsPerTick)
+        circularPixelsPerRadian = s.circularScroll.pixelsPerRadian
         circularInvert = s.circularScroll.invert
     }
 
     init(cursorSpeed: Double, cursorDeadzone: Double, circularEnabled: Bool,
-         circularMinRadius: Double, circularStartThreshold: Double, circularAnglePerTick: Double,
-         circularPixelsPerTick: Double, circularInvert: Bool) {
+         circularMinRadius: Double, circularStartThreshold: Double,
+         circularPixelsPerRadian: Double, circularInvert: Bool) {
         self.cursorSpeed = cursorSpeed
         self.cursorDeadzone = cursorDeadzone
         self.circularEnabled = circularEnabled
         self.circularMinRadius = circularMinRadius
         self.circularStartThreshold = circularStartThreshold
-        self.circularAnglePerTick = circularAnglePerTick
-        self.circularPixelsPerTick = circularPixelsPerTick
+        self.circularPixelsPerRadian = circularPixelsPerRadian
         self.circularInvert = circularInvert
     }
 
@@ -54,8 +51,7 @@ struct TuneSettings: Codable, Equatable {
             enabled: circularEnabled,
             minRadius: circularMinRadius,
             startThreshold: circularStartThreshold,
-            anglePerTick: circularAnglePerTick,
-            pixelsPerTick: Int(circularPixelsPerTick.rounded()),
+            pixelsPerRadian: circularPixelsPerRadian,
             invert: circularInvert)
     }
 }

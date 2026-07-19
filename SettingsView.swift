@@ -98,7 +98,7 @@ struct SettingsView: View {
                        minIcon: "hare.fill", maxIcon: "tortoise.fill",
                        display: { String(format: "%.0f°", $0 * 180 / .pi) })
                 slider(icon: "speedometer", title: "Scroll speed",
-                       value: $model.tune.circularPixelsPerTick, range: 4...40,
+                       value: $model.tune.circularPixelsPerRadian, range: 40...400,
                        minIcon: "tortoise.fill", maxIcon: "hare.fill",
                        display: { String(format: "%.0f", $0) })
                 Toggle(isOn: $model.tune.circularInvert) {

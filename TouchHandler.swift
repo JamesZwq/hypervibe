@@ -69,6 +69,8 @@ class TouchHandler {
     /// Set once this touch scrolls (circular or two-finger). A scrolling touch can NEVER also
     /// fire a swipe or tap — scroll and swipe are mutually exclusive within one touch.
     private var didScroll = false
+    /// Sub-pixel accumulator so smooth continuous rotation emits whole scroll pixels as they add up.
+    private var scrollRemainder: Double = 0
     private let tapMaxDuration: Double = 0.22
     private let tapMaxDistance: CGFloat = 0.07
     // Swipe detection: velocity-gated single-finger flick. Distance > 35% of trackpad in < 350ms,
@@ -306,6 +308,7 @@ class TouchHandler {
             hadMultipleFingersInSession = false
             circularActive = false
             didScroll = false
+            scrollRemainder = 0
             circularDetector.reset()
             sessionMaxFingers = activeTouchCount
             touchStartTime = mach_absolute_time()
@@ -323,10 +326,10 @@ class TouchHandler {
         if activeTouchCount == 1 && lastTouchCount == 1 {
             // Circular scroll (outer ring) preempts the cursor once rotation passes threshold.
             if circularConfig.enabled {
-                let ticks = circularDetector.feed(x: Double(currentPos.x), y: Double(currentPos.y))
-                if ticks != 0 { circularActive = true; didScroll = true }
+                let radians = circularDetector.feed(x: Double(currentPos.x), y: Double(currentPos.y))
+                if radians != 0 { circularActive = true; didScroll = true }
                 if circularActive {
-                    if ticks != 0 { emitCircularScroll(ticks: ticks) }
+                    if radians != 0 { emitCircularScroll(radians: radians) }
                     lastTouchPosition = currentPos
                     lastTouchCount = activeTouchCount
                     return
@@ -433,8 +436,14 @@ class TouchHandler {
         return clamped
     }
     
-    private func emitCircularScroll(ticks: Int) {
-        let dy = Int32(ticks * circularConfig.pixelsPerTick)
+    /// Continuous, smooth circular scroll: convert this frame's rotation to pixels, carrying the
+    /// sub-pixel remainder so slow rotation still scrolls evenly instead of stepping.
+    private func emitCircularScroll(radians: Double) {
+        scrollRemainder += radians * circularConfig.pixelsPerRadian
+        let whole = scrollRemainder.rounded(.towardZero)
+        guard whole != 0 else { return }
+        scrollRemainder -= whole
+        let dy = Int32(whole)
         DispatchQueue.main.async { [weak self] in
             self?.cursorController.scroll(deltaX: 0, deltaY: dy)
         }

@@ -56,11 +56,10 @@ enum ConfigStore {
         // Circular scroll (iPod wheel): circle a finger on the OUTER ring to scroll.
         "circularScroll": {
           "enabled": true,
-          "minRadius": 0.35,      // only touches this far from center count (outer ring)
-          "startThreshold": 0.5,  // radians to rotate before scrolling starts
-          "anglePerTick": 0.35,   // radians per scroll step (smaller = faster)
-          "pixelsPerTick": 12,    // scroll pixels per step (speed)
-          "invert": false         // flip if it scrolls the wrong way
+          "minRadius": 0.35,       // only touches this far from center count (outer ring)
+          "startThreshold": 0.35,  // radians to rotate before scrolling starts
+          "pixelsPerRadian": 160,  // scroll pixels per radian of rotation (speed)
+          "invert": false          // flip if it scrolls the wrong way
         }
       },
 
