@@ -135,20 +135,14 @@ class RemoteInputHandler {
             RemoteInputHandler.lastProcessedTime = mach_absolute_time()
         }
 
-        // Config engine overrides native mapping when it has a binding (tap, on press only).
+        // Config-driven only: a button with no binding does nothing. There are no built-in
+        // default key mappings — bind button.* / ring.* in the config to give buttons actions.
         if pressed, let controller = controller {
             let key = RemoteInputHandler.configKey(for: buttonName)
             if controller.handle(InputEvent(key: key)) {
                 print("🔘 \(key) (config)")
-                return
             }
         }
-
-        let action = menuBarManager?.getMapping(for: buttonName) ?? ButtonAction.none
-        if pressed {
-            print("🔘 Button pressed: \(buttonName) → \(action.rawValue)")
-        }
-        executeAction(action, button: buttonName, pressed: pressed)
     }
     
     private func handleSelectButton(pressed: Bool) {

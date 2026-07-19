@@ -106,10 +106,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         touchHandler?.onTwoFingerTap = { [weak self] in
+            // Config-driven only: unbound two-finger tap does nothing. Bind tap.two to use it.
             if self?.controller?.handle(InputEvent(key: "tap.two")) == true {
                 print("👐 tap.two (config)")
-            } else {
-                Mouse.perform("rightclick", payload: nil)   // default: two-finger tap = right-click
             }
         }
         touchHandler?.start()

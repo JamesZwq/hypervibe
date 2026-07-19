@@ -71,20 +71,17 @@ enum ConfigStore {
       },
 
       "modes": {
+        // Empty by default — nothing is mapped. Add your own bindings, e.g. (uncomment):
         "global": {
-          // Click-ring → arrow keys (works out of the box):
-          "ring.up":    { "action": "keystroke", "keys": "up" },
-          "ring.down":  { "action": "keystroke", "keys": "down" },
-          "ring.left":  { "action": "keystroke", "keys": "left" },
-          "ring.right": { "action": "keystroke", "keys": "right" }
-          // To add more, put a comma after the line above, then e.g.:
-          // ,"button.tv":   { "action": "shell", "command": "open -a Safari" }
-          // ,"swipe.left":  { "action": "keystroke", "keys": "cmd+[" }
-          // ,"swipe.right": { "action": "keystroke", "keys": "cmd+]" }
+          // "ring.up":     { "action": "keystroke", "keys": "up" },
+          // "ring.down":   { "action": "keystroke", "keys": "down" },
+          // "button.tv":   { "action": "shell", "command": "open -a Safari" },
+          // "swipe.left":  { "action": "keystroke", "keys": "cmd+[" },
+          // "swipe.right": { "action": "keystroke", "keys": "cmd+]" }
         }
-        // ,"keynote": { "inherits": "global",
-        //   "ring.right": { "action": "keystroke", "keys": "right" },
-        //   "ring.left":  { "action": "keystroke", "keys": "left" } }
+        // Per-app example (uncomment, and add the bundle id to appProfiles above):
+        // ,"vscode": { "inherits": "global",
+        //   "ring.up": { "action": "keystroke", "keys": "cmd+p" } }
       }
     }
     """
