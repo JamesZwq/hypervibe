@@ -365,6 +365,7 @@ class TouchHandler {
             shakeLastSign = 0
             circularDetector.reset()
             cursorController.resetMoveAccumulator()
+            DisplayWake.nudge()   // touching the pad also wakes a slept display
             sessionMaxFingers = activeTouchCount
             touchStartTime = mach_absolute_time()
             touchStartPosition = currentPos
