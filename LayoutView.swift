@@ -173,7 +173,10 @@ struct LayoutView: View {
     private var stage: some View {
         HStack(alignment: .top, spacing: 18) {
             VStack(spacing: 13) {
-                RemoteView(highlightedKey: $highlightedKey)
+                RemoteView(highlightedKey: $highlightedKey, onSelect: onSave == nil ? nil : { key in
+                    selectedKey = key       // click a remote button → open its editor row
+                    highlightedKey = key
+                })
                 Text("Aluminum Siri Remote (3rd gen). Click an input to edit it.")
                     .font(.system(size: 11.5)).foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

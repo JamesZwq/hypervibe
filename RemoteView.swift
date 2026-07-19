@@ -59,12 +59,19 @@ private extension View {
     func focusRing<S: InsettableShape>(_ shape: S, lit: Bool) -> some View {
         modifier(FocusRing(shape: shape, lit: lit))
     }
+    /// Make an element clickable: tapping it reports its control-identifier `key` (bidirectional
+    /// selection — click a remote button to jump to its row in the editor).
+    func selectable(_ key: String, _ onSelect: ((String) -> Void)?) -> some View {
+        contentShape(Rectangle()).onTapGesture { onSelect?(key) }
+    }
 }
 
 // MARK: - Remote
 
 struct RemoteView: View {
     @Binding var highlightedKey: String?
+    /// Optional: tapping a remote element reports its control-identifier (for bidirectional select).
+    var onSelect: ((String) -> Void)? = nil
 
     var body: some View {
         ZStack {
@@ -77,16 +84,16 @@ struct RemoteView: View {
             // Face buttons — LEFT column: Back, Play/Pause, Mute; RIGHT column: TV, then Volume pill.
             Group {
                 FaceButton(systemName: "chevron.backward", key: "button.back",
-                           iconSize: 15, weight: .semibold, highlightedKey: highlightedKey)
+                           iconSize: 15, weight: .semibold, highlightedKey: highlightedKey, onSelect: onSelect)
                     .position(x: 40.5, y: 199)
                 FaceButton(systemName: "tv", key: "button.tv",
-                           iconSize: 16, highlightedKey: highlightedKey)
+                           iconSize: 16, highlightedKey: highlightedKey, onSelect: onSelect)
                     .position(x: 109.5, y: 199)
                 FaceButton(systemName: "playpause", key: "button.playPause",
-                           iconSize: 15, highlightedKey: highlightedKey)
+                           iconSize: 15, highlightedKey: highlightedKey, onSelect: onSelect)
                     .position(x: 40.5, y: 265)
                 FaceButton(systemName: "speaker.slash", key: "button.mute",
-                           iconSize: 14, highlightedKey: highlightedKey)
+                           iconSize: 14, highlightedKey: highlightedKey, onSelect: onSelect)
                     .position(x: 40.5, y: 331)
                 volumePill
                     .position(x: 109.5, y: 298)
@@ -130,6 +137,7 @@ struct RemoteView: View {
             .foregroundStyle(RemotePalette.power)
             .frame(width: 19, height: 19)
             .focusRing(Circle(), lit: highlightedKey == "button.power")
+            .selectable("button.power", onSelect)
             .position(x: 124.5, y: 29.5)
     }
 
@@ -140,6 +148,7 @@ struct RemoteView: View {
             .frame(width: 6, height: 62)
             .shadow(color: .black.opacity(0.16), radius: 1, x: 1)
             .focusRing(RoundedRectangle(cornerRadius: 3), lit: highlightedKey == "button.siri")
+            .selectable("button.siri", onSelect)
             .position(x: 149, y: 181)
     }
 
@@ -152,6 +161,7 @@ struct RemoteView: View {
                                      center: UnitPoint(x: 0.5, y: 0.4), startRadius: 0, endRadius: 90))
                 .overlay(Circle().stroke(Color(hex: 0x060607), lineWidth: 1))
                 .focusRing(Circle(), lit: highlightedKey == "touch")
+                .selectable("touch", onSelect)
 
             Circle().stroke(Color.white.opacity(0.045), lineWidth: 1).padding(20)   // faint inner ring
 
@@ -176,6 +186,7 @@ struct RemoteView: View {
                 .overlay(Circle().stroke(Color.white.opacity(0.04), lineWidth: 1))
                 .frame(width: 52, height: 52)
                 .focusRing(Circle(), lit: highlightedKey == "select")
+                .selectable("select", onSelect)
         }
         .frame(width: 122, height: 122)
         .shadow(color: .black.opacity(0.3), radius: 3, y: 3)
@@ -190,8 +201,9 @@ struct RemoteView: View {
         Text(ch)
             .font(.system(size: 9))
             .foregroundStyle(RemotePalette.glyph.opacity(0.55))
-            .frame(width: 16, height: 16)
+            .frame(width: 22, height: 22)   // slightly larger tap target than the glyph
             .focusRing(Circle(), lit: highlightedKey == key)
+            .selectable(key, onSelect)
     }
 
     // MARK: Volume pill
@@ -212,10 +224,12 @@ struct RemoteView: View {
                 .foregroundStyle(RemotePalette.glyph)
                 .frame(width: 46, height: 56).offset(y: -28)
                 .focusRing(RoundedRectangle(cornerRadius: 20), lit: highlightedKey == "button.volumeUp")
+                .selectable("button.volumeUp", onSelect)
             Image(systemName: "minus").font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(RemotePalette.glyph)
                 .frame(width: 46, height: 56).offset(y: 28)
                 .focusRing(RoundedRectangle(cornerRadius: 20), lit: highlightedKey == "button.volumeDown")
+                .selectable("button.volumeDown", onSelect)
         }
         .frame(width: 46, height: 112)
         .shadow(color: .black.opacity(0.22), radius: 2, y: 2)
@@ -230,6 +244,7 @@ private struct FaceButton: View {
     var iconSize: CGFloat = 16
     var weight: Font.Weight = .medium
     let highlightedKey: String?
+    var onSelect: ((String) -> Void)? = nil
 
     var body: some View {
         Circle()
@@ -242,5 +257,6 @@ private struct FaceButton: View {
             .frame(width: 46, height: 46)
             .shadow(color: .black.opacity(0.22), radius: 2, y: 2)
             .focusRing(Circle(), lit: highlightedKey == key)
+            .selectable(key, onSelect)
     }
 }
