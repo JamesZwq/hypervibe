@@ -199,21 +199,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         case .mute:       buttonName = "mute"
         }
 
-        // Debounce: if the HID path just handled this button, don't double-fire.
-        if RemoteInputHandler.lastProcessedButton == buttonName {
-            let timeSinceLastProcess = Self.machDeltaToSeconds(from: RemoteInputHandler.lastProcessedTime)
-            if timeSinceLastProcess < 0.2 {
-                return true
-            }
-        }
-
-        let action = menuBarManager.getMapping(for: buttonName)
-        if action != .none {
-            menuBarManager.executeAction(action.rawValue)
-        }
-        // Always consume — no action in this app corresponds to a system media key anymore,
-        // so we never want macOS's default media handler to fire.
-        return true
+        // Only intercept the Siri Remote's OWN media keys. The remote's volume/playback also
+        // travels over BT AVRCP and lands here right after the seized HID path handled the same
+        // button — consume that duplicate. Media keys from the Mac keyboard or any other device
+        // have no matching recent remote HID event, so we pass them through untouched and normal
+        // volume / playback control keeps working. (true = consume, false = pass through.)
+        let fromRemote = RemoteInputHandler.lastProcessedButton == buttonName
+            && Self.machDeltaToSeconds(from: RemoteInputHandler.lastProcessedTime) < 0.3
+        return fromRemote
     }
     
     // MARK: - Permissions
