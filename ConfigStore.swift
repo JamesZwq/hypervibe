@@ -42,8 +42,7 @@ enum ConfigStore {
     {
       // siriRemote config — edit and save; changes hot-reload live.
       // Event keys: ring.up ring.down ring.left ring.right
-      //             swipe.up swipe.down swipe.left swipe.right
-      //             swipe2.up swipe2.down swipe2.left swipe2.right tap.two
+      //             swipe.up swipe.down swipe.left swipe.right tap.two
       //             button.menu button.tv button.siri button.playPause
       //             button.volumeUp button.volumeDown button.back
       //             button.nextTrack button.prevTrack button.mute button.power

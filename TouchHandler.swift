@@ -66,6 +66,9 @@ class TouchHandler {
     }
     private let circularDetector = CircularScrollDetector(config: .default)
     private var circularActive = false
+    /// Set once this touch scrolls (circular or two-finger). A scrolling touch can NEVER also
+    /// fire a swipe or tap — scroll and swipe are mutually exclusive within one touch.
+    private var didScroll = false
     private let tapMaxDuration: Double = 0.22
     private let tapMaxDistance: CGFloat = 0.07
     // Swipe detection: velocity-gated single-finger flick. Distance > 35% of trackpad in < 350ms,
@@ -77,8 +80,7 @@ class TouchHandler {
 
     /// Fired on touch-up when a single-finger flick is detected. Dispatched on main.
     var onSwipe: ((SwipeDirection) -> Void)?
-    /// Fired on touch-up for a two-finger flick / tap. Dispatched on main.
-    var onTwoFingerSwipe: ((SwipeDirection) -> Void)?
+    /// Fired on touch-up for a still two-finger tap (a two-finger drag scrolls instead).
     var onTwoFingerTap: (() -> Void)?
     /// Highest finger count seen this touch session (to classify two-finger gestures on lift).
     private var sessionMaxFingers = 0
@@ -303,6 +305,7 @@ class TouchHandler {
             rmDebug("📱 touch begin: fingers=\(activeTouchCount) pos=(\(avgX), \(avgY))")
             hadMultipleFingersInSession = false
             circularActive = false
+            didScroll = false
             circularDetector.reset()
             sessionMaxFingers = activeTouchCount
             touchStartTime = mach_absolute_time()
@@ -321,7 +324,7 @@ class TouchHandler {
             // Circular scroll (outer ring) preempts the cursor once rotation passes threshold.
             if circularConfig.enabled {
                 let ticks = circularDetector.feed(x: Double(currentPos.x), y: Double(currentPos.y))
-                if ticks != 0 { circularActive = true }
+                if ticks != 0 { circularActive = true; didScroll = true }
                 if circularActive {
                     if ticks != 0 { emitCircularScroll(ticks: ticks) }
                     lastTouchPosition = currentPos
@@ -350,6 +353,7 @@ class TouchHandler {
         } else if activeTouchCount == 2 && lastTouchCount == 2 {
             // Two fingers: always scroll regardless of mode
             performScroll(deltaX: deltaX, deltaY: deltaY)
+            if hypot(deltaX, deltaY) > 0.004 { didScroll = true }
             lastTouchPosition = currentPos
         } else {
             lastTouchPosition = currentPos
@@ -370,8 +374,10 @@ class TouchHandler {
     private func handleTouchEnd() {
         guard lastTouchPosition != nil else { return }
 
-        // A circular-scroll gesture must not also fire a tap/swipe.
-        if circularActive {
+        // Hard rule: if this touch scrolled (circular ring or two-finger), it is ONLY a scroll —
+        // never also a swipe or tap. Scroll and swipe are mutually exclusive within one touch.
+        if didScroll {
+            didScroll = false
             circularActive = false
             return
         }
@@ -385,37 +391,21 @@ class TouchHandler {
         let dy = (lastTouchPosition?.y ?? 0) - touchStartPosition.y
         let movement = hypot(dx, dy)
 
-        // Two-finger gestures: swipe2.* on a quick flick, tap.two on a quick tap.
-        // (A longer two-finger drag already scrolled live during the move.)
+        // Two fingers that did NOT scroll → a quick still two-finger tap (right-click by default).
+        // A two-finger drag scrolled and was already handled by the didScroll lock above.
         if sessionMaxFingers >= 2 {
-            if duration < swipeMaxDuration, movement > swipeMinDistance,
-               let direction = swipeDirection(dx: dx, dy: dy) {
-                DispatchQueue.main.async { [weak self] in self?.onTwoFingerSwipe?(direction) }
-            } else if duration < tapMaxDuration, movement < tapMaxDistance {
+            if duration < tapMaxDuration, movement < tapMaxDistance {
                 DispatchQueue.main.async { [weak self] in self?.onTwoFingerTap?() }
             }
             return
         }
 
-        // Swipe detection (flick). Fires before tap check; distance threshold is well above
-        // tapMaxDistance, so a swipe can never also register as a tap.
-        if duration < swipeMaxDuration && movement > swipeMinDistance {
-            let absDx = abs(dx), absDy = abs(dy)
-            let direction: SwipeDirection?
-            if absDx > absDy * swipeAxisRatio {
-                direction = dx > 0 ? .right : .left
-            } else if absDy > absDx * swipeAxisRatio {
-                // MultitouchSupport reports y increasing toward the top of the trackpad.
-                direction = dy > 0 ? .up : .down
-            } else {
-                direction = nil
-            }
-            if let direction = direction {
-                DispatchQueue.main.async { [weak self] in
-                    self?.onSwipe?(direction)
-                }
-                return
-            }
+        // One-finger swipe (flick). Distance threshold is well above tapMaxDistance, so a swipe
+        // can never also register as a tap.
+        if duration < swipeMaxDuration, movement > swipeMinDistance,
+           let direction = swipeDirection(dx: dx, dy: dy) {
+            DispatchQueue.main.async { [weak self] in self?.onSwipe?(direction) }
+            return
         }
 
         if duration < tapMaxDuration && movement < tapMaxDistance {

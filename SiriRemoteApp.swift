@@ -105,10 +105,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             self?.menuBarManager?.executeSwipe(direction)
         }
-        touchHandler?.onTwoFingerSwipe = { [weak self] direction in
-            let key = "swipe2.\(direction.rawValue)"
-            if self?.controller?.handle(InputEvent(key: key)) == true { print("👐 \(key) (config)") }
-        }
         touchHandler?.onTwoFingerTap = { [weak self] in
             if self?.controller?.handle(InputEvent(key: "tap.two")) == true {
                 print("👐 tap.two (config)")
