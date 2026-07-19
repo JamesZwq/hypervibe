@@ -90,9 +90,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         //     unbound buttons fall through to HyperVibe's native mapping. ---
         let config = ConfigStore.loadConfig()
 
-        // Tuning: the Settings window (UserDefaults) is the source of truth, seeded once from
-        // the config file's settings block.
-        let model = SettingsModel(initial: TuneStore.load() ?? TuneSettings(seed: config.settings))
+        // Tuning: config.jsonc's `settings` block is the source of truth — always seed from it (a
+        // stale saved tune no longer shadows config edits), and re-seed on every hot-reload below.
+        let model = SettingsModel(initial: TuneSettings(seed: config.settings))
         model.onApply = { [weak self] tune in self?.applyTune(tune) }
         model.config = config   // publish the live config to the Settings "Layout" tab
         settingsModel = model
@@ -118,6 +118,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let reloaded = ConfigStore.loadConfig()
             self?.controller?.reload(config: reloaded)
             self?.settingsModel?.config = reloaded   // keep the Layout tab in sync on hot-reload
+            // Live-tune: re-seed tuning from the config's `settings` so editing config.jsonc updates
+            // cursor feel / thresholds immediately. The @Published didSet applies it (→ applyTune)
+            // only when the values actually changed, so mapping-only edits don't churn.
+            self?.settingsModel?.tune = TuneSettings(seed: reloaded.settings)
             print("♻️ siriRemote config reloaded")
         }
         print("🧩 siriRemote config engine active — \(ConfigStore.path.path)")

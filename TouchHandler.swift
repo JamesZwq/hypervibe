@@ -307,6 +307,7 @@ class TouchHandler {
     
     func handleTouches(touches: UnsafeMutablePointer<MTTouch>?, count: Int, timestamp: Double) {
         lastTouchTime = mach_absolute_time()
+        countFrame(timestamp: timestamp)
 
         guard count > 0, let touchPtr = touches else {
             // Touch ended
@@ -363,6 +364,7 @@ class TouchHandler {
             pressFreezeFrames = 0
             shakeLastSign = 0
             circularDetector.reset()
+            cursorController.resetMoveAccumulator()
             sessionMaxFingers = activeTouchCount
             touchStartTime = mach_absolute_time()
             touchStartPosition = currentPos
@@ -424,18 +426,8 @@ class TouchHandler {
             }
             // Shake-to-locate: fed the post-deadzone, pre-accel horizontal delta of a real move.
             detectShake(dx: deltaX, timestamp: timestamp)
-            let clamped = moveCursor(deltaX: deltaX, deltaY: deltaY)
-            // Only advance touch tracking if cursor wasn't clamped in that direction
-            if let lastPos = lastTouchPosition {
-                let adjustedDeltaX = clamped.clampedX ? 0 : deltaX
-                let adjustedDeltaY = clamped.clampedY ? 0 : deltaY
-                lastTouchPosition = CGPoint(
-                    x: lastPos.x + adjustedDeltaX,
-                    y: lastPos.y + adjustedDeltaY
-                )
-            } else {
-                lastTouchPosition = currentPos
-            }
+            moveCursor(deltaX: deltaX, deltaY: deltaY)
+            lastTouchPosition = currentPos
         } else if activeTouchCount == 2 && lastTouchCount == 2 {
             // Two fingers: always scroll regardless of mode
             performScroll(deltaX: deltaX, deltaY: deltaY)
@@ -509,10 +501,11 @@ class TouchHandler {
         return t * t * (3 - 2 * t)
     }
 
-    private func moveCursor(deltaX: CGFloat, deltaY: CGFloat) -> (clampedX: Bool, clampedY: Bool) {
+    private func moveCursor(deltaX: CGFloat, deltaY: CGFloat) {
         // Velocity-based acceleration: slow finger motion → precise (accelMin), fast → reach
         // (accelMax), smooth between. v is the per-frame delta magnitude (same normalized units
-        // as the deadzone). Layered on top of cursorSpeed; ≈1.0 at typical medium move speed.
+        // as the deadzone). This is the ONLY place the delta is scaled (CursorController no longer
+        // double-scales), so the accel curve fully controls the feel.
         let v = hypot(deltaX, deltaY)
         let t = smoothstep(v, accelLowSpeed, accelHighSpeed)
         let accelMul = accelMin + (accelMax - accelMin) * t
@@ -520,17 +513,10 @@ class TouchHandler {
         let scaledX = deltaX * cursorScale * effectiveSpeed
         let scaledY = -deltaY * cursorScale * effectiveSpeed
 
-        var clamped = (clampedX: false, clampedY: false)
-
-        if Thread.isMainThread {
-            clamped = cursorController.moveCursor(deltaX: scaledX, deltaY: scaledY)
-        } else {
-            DispatchQueue.main.sync {
-                clamped = cursorController.moveCursor(deltaX: scaledX, deltaY: scaledY)
-            }
-        }
-
-        return clamped
+        // Post directly on the multitouch callback thread — CursorController.moveCursor is
+        // CoreGraphics-only and thread-safe, so there is NO main-thread hop (that per-frame
+        // `DispatchQueue.main.sync` was the main source of cursor stutter).
+        cursorController.moveCursor(deltaX: scaledX, deltaY: scaledY)
     }
     
     /// Shake detector: count horizontal sign reversals of brisk motion; fire `onShake` when
@@ -551,6 +537,22 @@ class TouchHandler {
             }
         }
         shakeLastSign = sign
+    }
+
+    // MARK: - Frame-rate measurement (diagnostic)
+    private var frameCount = 0
+    private var frameWindowStart: Double = 0
+    /// Log the touch report rate ~once/sec while a finger is down, to quantify the remote's BLE
+    /// sampling ceiling vs. our processing. `timestamp` is the MT frame time in seconds.
+    private func countFrame(timestamp: Double) {
+        if frameWindowStart == 0 { frameWindowStart = timestamp }
+        frameCount += 1
+        let elapsed = timestamp - frameWindowStart
+        if elapsed >= 1.0 {
+            rmDebug(String(format: "⏱ touch rate: %.0f Hz (%d frames / %.2fs)", Double(frameCount) / elapsed, frameCount, elapsed))
+            frameCount = 0
+            frameWindowStart = timestamp
+        }
     }
 
     /// Emit smooth circular scroll: carry the sub-pixel remainder so a steady rotation scrolls
