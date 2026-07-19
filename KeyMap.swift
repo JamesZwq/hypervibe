@@ -47,23 +47,25 @@ enum KeyMap {
     /// Modifier token → (virtual keycode, event flag). Right variants OR in the device-specific
     /// NX flag bit so apps that check left/right see the correct side.
     private static func modifier(_ token: String) -> (keyCode: CGKeyCode, flag: CGEventFlags)? {
+        // Each flag ORs in the device-specific NX bit (left or right) on top of the generic mask,
+        // matching a real keyboard — system-level shortcuts (Spaces, Mission Control) check it.
         switch token {
         case "cmd", "command", "lcmd", "lcommand":
-            return (CGKeyCode(kVK_Command), .maskCommand)
+            return (CGKeyCode(kVK_Command), flag(.maskCommand, 0x8))      // NX_DEVICELCMDKEYMASK
         case "rcmd", "rcommand":
-            return (CGKeyCode(kVK_RightCommand), flag(.maskCommand, 0x10))
+            return (CGKeyCode(kVK_RightCommand), flag(.maskCommand, 0x10)) // NX_DEVICERCMDKEYMASK
         case "ctrl", "control", "lctrl", "lcontrol":
-            return (CGKeyCode(kVK_Control), .maskControl)
+            return (CGKeyCode(kVK_Control), flag(.maskControl, 0x1))       // NX_DEVICELCTLKEYMASK
         case "rctrl", "rcontrol":
-            return (CGKeyCode(kVK_RightControl), flag(.maskControl, 0x2000))
+            return (CGKeyCode(kVK_RightControl), flag(.maskControl, 0x2000)) // NX_DEVICERCTLKEYMASK
         case "opt", "option", "alt", "lopt", "loption", "lalt":
-            return (CGKeyCode(kVK_Option), .maskAlternate)
+            return (CGKeyCode(kVK_Option), flag(.maskAlternate, 0x20))     // NX_DEVICELALTKEYMASK
         case "ropt", "roption", "ralt":
-            return (CGKeyCode(kVK_RightOption), flag(.maskAlternate, 0x40))
+            return (CGKeyCode(kVK_RightOption), flag(.maskAlternate, 0x40)) // NX_DEVICERALTKEYMASK
         case "shift", "lshift":
-            return (CGKeyCode(kVK_Shift), .maskShift)
+            return (CGKeyCode(kVK_Shift), flag(.maskShift, 0x2))          // NX_DEVICELSHIFTKEYMASK
         case "rshift":
-            return (CGKeyCode(kVK_RightShift), flag(.maskShift, 0x4))
+            return (CGKeyCode(kVK_RightShift), flag(.maskShift, 0x4))      // NX_DEVICERSHIFTKEYMASK
         default:
             return nil
         }
