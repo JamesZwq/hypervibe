@@ -2,33 +2,75 @@
 //  KeyMap.swift
 //  HyperVibe (config engine integration)
 //
-//  Parses keystroke strings like "cmd+shift+up" into a virtual key code + modifier flags.
+//  Parses keystroke strings like "cmd+shift+up", "ctrl+9", or a modifier-only chord like
+//  "rctrl+rcmd+ropt" into ordered modifier keys + an optional main key. Supports left/right
+//  modifier variants (right ones carry the device-specific NX flag so apps that distinguish
+//  sides see the right key).
 //
 
 import Carbon.HIToolbox
 import CoreGraphics
 
 enum KeyMap {
-    /// Parse "cmd+shift+up" → (keyCode, flags). Returns nil on any unknown token.
-    static func parse(_ combo: String) -> (CGKeyCode, CGEventFlags)? {
+    /// A parsed keystroke. `mainKey` is nil for a modifier-only chord (a "hyperkey").
+    struct Combo {
+        var mods: [(keyCode: CGKeyCode, flag: CGEventFlags)]
+        var flags: CGEventFlags   // union of all modifier flags
+        var mainKey: CGKeyCode?
+    }
+
+    /// Parse a combo string. Returns nil on any unknown token or if more than one main key.
+    static func parse(_ combo: String) -> Combo? {
         let tokens = combo.lowercased()
             .split(separator: "+")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
-        guard let keyToken = tokens.last else { return nil }
+        guard !tokens.isEmpty else { return nil }
 
+        var mods: [(keyCode: CGKeyCode, flag: CGEventFlags)] = []
         var flags: CGEventFlags = []
-        for mod in tokens.dropLast() {
-            switch mod {
-            case "cmd", "command":     flags.insert(.maskCommand)
-            case "shift":              flags.insert(.maskShift)
-            case "opt", "option", "alt": flags.insert(.maskAlternate)
-            case "ctrl", "control":    flags.insert(.maskControl)
-            default: return nil
+        var mainKey: CGKeyCode?
+        for t in tokens {
+            if let m = modifier(t) {
+                mods.append(m)
+                flags.insert(m.flag)
+            } else if let code = keyCode(for: t) {
+                if mainKey != nil { return nil }   // at most one non-modifier key
+                mainKey = CGKeyCode(code)
+            } else {
+                return nil
             }
         }
-        guard let code = keyCode(for: keyToken) else { return nil }
-        return (CGKeyCode(code), flags)
+        return Combo(mods: mods, flags: flags, mainKey: mainKey)
+    }
+
+    /// Modifier token → (virtual keycode, event flag). Right variants OR in the device-specific
+    /// NX flag bit so apps that check left/right see the correct side.
+    private static func modifier(_ token: String) -> (keyCode: CGKeyCode, flag: CGEventFlags)? {
+        switch token {
+        case "cmd", "command", "lcmd", "lcommand":
+            return (CGKeyCode(kVK_Command), .maskCommand)
+        case "rcmd", "rcommand":
+            return (CGKeyCode(kVK_RightCommand), flag(.maskCommand, 0x10))
+        case "ctrl", "control", "lctrl", "lcontrol":
+            return (CGKeyCode(kVK_Control), .maskControl)
+        case "rctrl", "rcontrol":
+            return (CGKeyCode(kVK_RightControl), flag(.maskControl, 0x2000))
+        case "opt", "option", "alt", "lopt", "loption", "lalt":
+            return (CGKeyCode(kVK_Option), .maskAlternate)
+        case "ropt", "roption", "ralt":
+            return (CGKeyCode(kVK_RightOption), flag(.maskAlternate, 0x40))
+        case "shift", "lshift":
+            return (CGKeyCode(kVK_Shift), .maskShift)
+        case "rshift":
+            return (CGKeyCode(kVK_RightShift), flag(.maskShift, 0x4))
+        default:
+            return nil
+        }
+    }
+
+    private static func flag(_ generic: CGEventFlags, _ deviceBit: UInt64) -> CGEventFlags {
+        CGEventFlags(rawValue: generic.rawValue | deviceBit)
     }
 
     private static func keyCode(for token: String) -> Int? {

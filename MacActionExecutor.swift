@@ -54,16 +54,37 @@ final class MacActionExecutor: ActionExecutor {
 
 enum Keys {
     static func synthesize(_ combo: String) {
-        guard let (code, flags) = KeyMap.parse(combo) else {
+        guard let parsed = KeyMap.parse(combo) else {
             NSLog("[siriRemote] unknown keystroke '\(combo)'"); return
         }
         let src = CGEventSource(stateID: .combinedSessionState)
-        let down = CGEvent(keyboardEventSource: src, virtualKey: code, keyDown: true)
-        down?.flags = flags
-        let up = CGEvent(keyboardEventSource: src, virtualKey: code, keyDown: false)
-        up?.flags = flags
-        down?.post(tap: .cghidEventTap)
-        up?.post(tap: .cghidEventTap)
+
+        if let mainKey = parsed.mainKey {
+            // Normal shortcut: modifiers ride as flags on the main key event.
+            let down = CGEvent(keyboardEventSource: src, virtualKey: mainKey, keyDown: true)
+            down?.flags = parsed.flags
+            let up = CGEvent(keyboardEventSource: src, virtualKey: mainKey, keyDown: false)
+            up?.flags = parsed.flags
+            down?.post(tap: .cghidEventTap)
+            up?.post(tap: .cghidEventTap)
+        } else {
+            // Modifier-only chord (e.g. "rctrl+rcmd+ropt"): press all modifiers, hold briefly so a
+            // hyperkey-aware tool can see them together, then release in reverse.
+            var f: CGEventFlags = []
+            for m in parsed.mods {
+                f.insert(m.flag)
+                let e = CGEvent(keyboardEventSource: src, virtualKey: m.keyCode, keyDown: true)
+                e?.flags = f
+                e?.post(tap: .cghidEventTap)
+            }
+            usleep(30000)
+            for m in parsed.mods.reversed() {
+                f.remove(m.flag)
+                let e = CGEvent(keyboardEventSource: src, virtualKey: m.keyCode, keyDown: false)
+                e?.flags = f
+                e?.post(tap: .cghidEventTap)
+            }
+        }
     }
 }
 

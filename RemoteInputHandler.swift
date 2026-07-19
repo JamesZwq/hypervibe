@@ -113,12 +113,8 @@ class RemoteInputHandler {
         }
         buttonState[buttonName] = isPressed
 
-        // Volume keys on the Siri Remote also travel over BT AVRCP absolute-volume, which
-        // coreaudiod honors below cghidEventTap. Arm the revert guard on every press so the
-        // CoreAudio listener snaps the level back to the pre-press value.
-        if isPressed && (buttonName == "volumeUp" || buttonName == "volumeDown") {
-            VolumeRevertGuard.shared.armFromRemoteButton()
-        }
+        // Volume keys are left to the remote's native BT/AVRCP absolute-volume path so they
+        // control system volume in every app (we no longer arm the revert guard to undo it).
 
         // First key-down after connection: skip so the connect handshake doesn't fire an action.
         if intValue == 1 && isFirstPressAfterConnection {

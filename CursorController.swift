@@ -16,6 +16,11 @@ class CursorController {
     
     var isDragging: Bool = false
     var isClickActive: Bool = false
+
+    // Double/triple-click tracking: macOS only recognizes a multi-click when the click-state
+    // field is 2/3 on clicks within the system double-click interval.
+    private var lastClickTime: TimeInterval = 0
+    private var clickState: Int = 1
     
     // MARK: - Helper Functions
     
@@ -98,20 +103,32 @@ class CursorController {
     
     func performClick() {
         let currentPosition = CGEvent(source: nil)?.location ?? .zero
-        
+
+        // Track click count so consecutive clicks within the system double-click interval register
+        // as a double (2) / triple (3) click instead of separate single clicks.
+        let now = ProcessInfo.processInfo.systemUptime
+        if now - lastClickTime <= NSEvent.doubleClickInterval {
+            clickState = min(clickState + 1, 3)
+        } else {
+            clickState = 1
+        }
+        lastClickTime = now
+
         // Mouse down
         guard let downEvent = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: currentPosition, mouseButton: .left) else {
             return
         }
+        downEvent.setIntegerValueField(.mouseEventClickState, value: Int64(clickState))
         downEvent.post(tap: CGEventTapLocation.cghidEventTap)
-        
+
         // Small delay
         usleep(10000) // 10ms
-        
+
         // Mouse up
         guard let upEvent = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: currentPosition, mouseButton: .left) else {
             return
         }
+        upEvent.setIntegerValueField(.mouseEventClickState, value: Int64(clickState))
         upEvent.post(tap: CGEventTapLocation.cghidEventTap)
     }
     
