@@ -84,6 +84,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         controller = engineController
         remoteInputHandler?.controller = engineController
         appWatcher = AppWatcher { [weak engineController] bundleID in
+            rmDebug("🎯 frontmost app → \(bundleID)")
             engineController?.frontmostAppChanged(bundleID: bundleID)
         }
         configWatcher = ConfigFileWatcher(url: ConfigStore.path) { [weak self] in
@@ -201,14 +202,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         case .mute:       buttonName = "mute"
         }
 
-        // Only intercept the Siri Remote's OWN media keys. The remote's volume/playback also
-        // travels over BT AVRCP and lands here right after the seized HID path handled the same
-        // button — consume that duplicate. Media keys from the Mac keyboard or any other device
-        // have no matching recent remote HID event, so we pass them through untouched and normal
-        // volume / playback control keeps working. (true = consume, false = pass through.)
+        // Consume a media key ONLY when it's the remote's own AND the config binds it — the HID
+        // path already ran the bound action, so we suppress this duplicate. Unbound remote media
+        // keys (e.g. volume, which is left native) pass through so the system does its native thing
+        // (change volume, play/pause). Keyboard/other-device media keys (fromRemote=false) also
+        // pass through. (true = consume, false = pass through.)
         let fromRemote = RemoteInputHandler.lastProcessedButton == buttonName
             && Self.machDeltaToSeconds(from: RemoteInputHandler.lastProcessedTime) < 0.3
-        return fromRemote
+        let bound = controller?.hasBinding(for: "button.\(buttonName)") ?? false
+        return fromRemote && bound
     }
     
     // MARK: - Permissions
