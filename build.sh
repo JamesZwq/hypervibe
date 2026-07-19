@@ -23,6 +23,8 @@ SWIFT_FILES=(
     "SettingsModel.swift"
     "SettingsView.swift"
     "SettingsWindow.swift"
+    "RemoteView.swift"
+    "LayoutView.swift"
     # --- Config engine integration (this fork) ---
     "KeyMap.swift"
     "MacActionExecutor.swift"

@@ -19,6 +19,10 @@ final class SettingsModel: ObservableObject {
     /// Live connection status shown in the window header.
     @Published var connected: Bool = false
 
+    /// The live parsed config (modes / bindings / appProfiles), refreshed on hot-reload.
+    /// Read-only for the "Layout" tab. Set by AppDelegate at load and on every config reload.
+    @Published var config: Config?
+
     /// Set by AppDelegate to push values into the running TouchHandler.
     var onApply: ((TuneSettings) -> Void)?
 

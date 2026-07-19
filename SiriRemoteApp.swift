@@ -31,6 +31,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         print("🚀 HyperVibe starting...")
 
+        // Headless self-QC: `--snapshot-layout <path>` renders the Layout settings view to a PNG
+        // and exits, without seizing the remote or opening a window.
+        if let idx = CommandLine.arguments.firstIndex(of: "--snapshot-layout"),
+           idx + 1 < CommandLine.arguments.count {
+            LayoutSnapshot.renderAndExit(to: CommandLine.arguments[idx + 1])
+            return
+        }
+
         // Bluetooth AVRCP play/pause signals bypass cghidEventTap and reach com.apple.rcd
         // directly, which launches Music.app. Suspend rcd for this session; restored on exit.
         RCDControl.suspend()
@@ -68,6 +76,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // the config file's settings block.
         let model = SettingsModel(initial: TuneStore.load() ?? TuneSettings(seed: config.settings))
         model.onApply = { [weak self] tune in self?.applyTune(tune) }
+        model.config = config   // publish the live config to the Settings "Layout" tab
         settingsModel = model
         let settingsWin = SettingsWindowController(model: model)
         settingsWindow = settingsWin
@@ -88,7 +97,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             engineController?.frontmostAppChanged(bundleID: bundleID)
         }
         configWatcher = ConfigFileWatcher(url: ConfigStore.path) { [weak self] in
-            self?.controller?.reload(config: ConfigStore.loadConfig())
+            let reloaded = ConfigStore.loadConfig()
+            self?.controller?.reload(config: reloaded)
+            self?.settingsModel?.config = reloaded   // keep the Layout tab in sync on hot-reload
             print("♻️ siriRemote config reloaded")
         }
         print("🧩 siriRemote config engine active — \(ConfigStore.path.path)")

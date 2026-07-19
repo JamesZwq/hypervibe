@@ -17,6 +17,9 @@ final class SettingsWindowController {
     func show() {
         if window == nil {
             let hosting = NSHostingController(rootView: SettingsView(model: model))
+            // Track the SwiftUI content's fitting size so the window grows/shrinks when the
+            // Layout tab (wider) is selected vs. the Tuning tab.
+            hosting.sizingOptions = [.preferredContentSize]
             let win = NSWindow(contentViewController: hosting)
             win.title = "siriRemote Settings"
             win.styleMask = [.titled, .closable, .fullSizeContentView]

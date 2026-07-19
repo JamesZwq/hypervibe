@@ -10,20 +10,48 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var model: SettingsModel
 
+    private enum Tab: String, CaseIterable { case tuning = "Tuning", layout = "Layout" }
+    @State private var tab: Tab = .tuning
+
     var body: some View {
         VStack(spacing: 0) {
             header
-            Form {
-                cursorSection
-                accelerationSection
-                clickSection
-                circularSection
-                buttonsSection
-                footerSection
+            tabPicker
+            Divider()
+            switch tab {
+            case .tuning:
+                Form {
+                    cursorSection
+                    accelerationSection
+                    clickSection
+                    circularSection
+                    buttonsSection
+                    footerSection
+                }
+                .formStyle(.grouped)
+            case .layout:
+                if let config = model.config {
+                    LayoutView(config: config)
+                } else {
+                    Spacer()
+                    Text("Loading config…").foregroundStyle(.secondary)
+                    Spacer()
+                }
             }
-            .formStyle(.grouped)
         }
-        .frame(width: 452, height: 980)
+        .frame(width: tab == .layout ? 900 : 452, height: 980)
+    }
+
+    // MARK: - Tab switcher
+
+    private var tabPicker: some View {
+        Picker("", selection: $tab) {
+            ForEach(Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .padding(.horizontal, 22).padding(.vertical, 10)
+        .background(.bar)
     }
 
     // MARK: - Header
