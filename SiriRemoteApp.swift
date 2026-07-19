@@ -168,6 +168,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         touchHandler?.circularConfig = t.circularConfig
         remoteInputHandler?.holdThreshold = t.holdThreshold
         remoteInputHandler?.doubleTapWindow = t.doubleTapWindow
+        remoteInputHandler?.spacesModeWindow = t.spacesModeWindow
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

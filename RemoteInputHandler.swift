@@ -32,7 +32,26 @@ class RemoteInputHandler {
     /// immediately (zero added latency).
     var doubleTapWindow: TimeInterval = 0.3
     private var pendingSingle: [String: DispatchWorkItem] = [:]
-    
+
+    /// Hold-to-repeat: a `.repeatKey` binding auto-repeats its keystroke while the button is held
+    /// (HID sends a press then a release with NO auto-repeat, so the app generates the repeats).
+    /// A press fires once + schedules a repeating timer (after `delay`, every `interval`); the
+    /// matching release stops it. Keyed by HID button name. Bypasses `.hold`/`.double` entirely.
+    private var repeatTimers: [String: DispatchSourceTimer] = [:]
+
+    /// Spaces Mode: long-pressing ring.up opens Mission Control AND arms this mode. While armed,
+    /// ring.left/right switch desktops (animated, via BetterTouchTool) and each switch restarts a
+    /// `spacesModeWindow` timer. It exits (disarms) on ring.down (also closes Mission Control), a
+    /// second ring.up long-press (also closes Mission Control), or `spacesModeWindow` of inactivity.
+    var spacesModeWindow: TimeInterval = 5.0
+    private var spacesModeActive = false
+    private var spacesModeTimer: DispatchWorkItem?
+
+    /// BetterTouchTool predefined-action triggers for animated space switching (HANDOFF §6):
+    /// action 113 = move one space left, 114 = move one space right. Run via the shell (`open -g`).
+    private static let bttSpaceLeftCommand  = "open -g \"btt://trigger_action/?json=%7B%22BTTPredefinedActionType%22%3A113%7D\""
+    private static let bttSpaceRightCommand = "open -g \"btt://trigger_action/?json=%7B%22BTTPredefinedActionType%22%3A114%7D\""
+
     /// Called on any button activity; use to trigger trackpad re-scan after remote wake.
     var onButtonActivity: (() -> Void)?
     
@@ -156,6 +175,44 @@ class RemoteInputHandler {
         let tapKey = RemoteInputHandler.configKey(for: buttonName)
         let holdKey = tapKey + ".hold"
 
+        // 1) Spaces Mode: while armed, the ring becomes a desktop switcher. Intercept on press,
+        //    BEFORE any config dispatch, and consume so the normal binding doesn't also fire.
+        //    (ring.up long-press is handled in the hold path below so a hold can toggle it off.)
+        if spacesModeActive && pressed {
+            switch tapKey {
+            case "ring.left":
+                Shell.run(RemoteInputHandler.bttSpaceLeftCommand)
+                restartSpacesModeTimer()
+                print("🖥 Spaces Mode: ← space")
+                return
+            case "ring.right":
+                Shell.run(RemoteInputHandler.bttSpaceRightCommand)
+                restartSpacesModeTimer()
+                print("🖥 Spaces Mode: → space")
+                return
+            case "ring.down":
+                sendKey(kVK_Escape)          // close Mission Control
+                disarmSpacesMode()
+                print("🖥 Spaces Mode: exit (ring.down)")
+                return
+            default:
+                break                        // other buttons pass through normally, no disarm
+            }
+        }
+
+        // 2) Hold-to-repeat: if this key resolves to a `.repeatKey` action, bypass the normal
+        //    hold/double discrimination — a press fires once and starts an auto-repeat, and the
+        //    release stops it. (Because this bypasses the `.hold` path, an inherited `<key>.hold`
+        //    binding is intentionally NOT reachable for a `.repeatKey` key.)
+        if case let .repeatKey(keys, delay, interval)? = controller.resolvedAction(for: tapKey) {
+            if pressed {
+                startKeyRepeat(buttonName, tapKey: tapKey, keys: keys, delay: delay, interval: interval)
+            } else {
+                stopKeyRepeat(buttonName)
+            }
+            return
+        }
+
         if pressed {
             guard controller.hasBinding(for: holdKey) else {
                 // No long-press binding → the tap completes on press. Fire the single immediately
@@ -169,7 +226,7 @@ class RemoteInputHandler {
                 guard let self = self else { return }
                 self.pendingHold[buttonName] = nil
                 self.holdFired.insert(buttonName)
-                if controller.handle(InputEvent(key: holdKey)) { print("🔘 \(holdKey) (config)") }
+                self.fireHold(controller: controller, holdKey: holdKey)
             }
             pendingHold[buttonName] = work
             DispatchQueue.main.asyncAfter(deadline: .now() + holdThreshold, execute: work)
@@ -184,6 +241,85 @@ class RemoteInputHandler {
             }
             holdFired.remove(buttonName)
         }
+    }
+
+    /// Run a long-press (`<key>.hold`) action. `ring.up.hold` additionally toggles Spaces Mode:
+    /// the first long-press runs its config action (open Mission Control) and arms; a second
+    /// long-press while armed closes Mission Control (Escape) and disarms instead of re-opening.
+    private func fireHold(controller: Controller, holdKey: String) {
+        if holdKey == "ring.up.hold" {
+            if spacesModeActive {
+                sendKey(kVK_Escape)              // close Mission Control
+                disarmSpacesMode()
+                print("🖥 Spaces Mode: exit (ring.up long-press)")
+                return
+            }
+            if controller.handle(InputEvent(key: holdKey)) { print("🔘 \(holdKey) (config)") }
+            armSpacesMode()                      // Mission Control now open → arm desktop switching
+            return
+        }
+        if controller.handle(InputEvent(key: holdKey)) { print("🔘 \(holdKey) (config)") }
+    }
+
+    // MARK: - Hold-to-repeat (Feature 1)
+
+    /// Start auto-repeating `keys` for `buttonName`. Fires once immediately (through the config
+    /// path so it's logged like any dispatch), then after `delay` repeats every `interval` on the
+    /// main queue until `stopKeyRepeat`. Repeats call `Keys.synthesize` directly to avoid
+    /// re-resolving the binding every tick.
+    private func startKeyRepeat(_ buttonName: String, tapKey: String, keys: String,
+                                delay: Double, interval: Double) {
+        stopKeyRepeat(buttonName)   // defensive: never stack two repeats on one button
+
+        // First fire via the controller so it logs and honors the config path (executor
+        // synthesizes a single keystroke for `.repeatKey`).
+        if controller?.handle(InputEvent(key: tapKey)) == true { print("🔘 \(tapKey) ⟳ (config)") }
+
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + delay, repeating: interval)
+        timer.setEventHandler { Keys.synthesize(keys) }
+        repeatTimers[buttonName] = timer
+        timer.resume()
+    }
+
+    /// Stop and clear the auto-repeat timer for `buttonName` (on release, a new press, or teardown).
+    private func stopKeyRepeat(_ buttonName: String) {
+        if let timer = repeatTimers.removeValue(forKey: buttonName) { timer.cancel() }
+    }
+
+    private func stopAllKeyRepeats() {
+        for (_, timer) in repeatTimers { timer.cancel() }
+        repeatTimers.removeAll()
+    }
+
+    // MARK: - Spaces Mode (Feature 2)
+
+    /// Arm Spaces Mode (called right after ring.up.hold opens Mission Control) and start the
+    /// inactivity timer.
+    private func armSpacesMode() {
+        spacesModeActive = true
+        restartSpacesModeTimer()
+        rmDebug("🖥 Spaces Mode armed (\(spacesModeWindow)s window)")
+    }
+
+    /// Restart the inactivity timer: after `spacesModeWindow` seconds with no left/right switch,
+    /// Spaces Mode disarms on its own (Mission Control is left as-is on a timeout — not closed).
+    private func restartSpacesModeTimer() {
+        spacesModeTimer?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            self.spacesModeTimer = nil
+            self.spacesModeActive = false
+            rmDebug("🖥 Spaces Mode timed out")
+        }
+        spacesModeTimer = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + spacesModeWindow, execute: work)
+    }
+
+    private func disarmSpacesMode() {
+        spacesModeActive = false
+        spacesModeTimer?.cancel()
+        spacesModeTimer = nil
     }
 
     /// Fire a completed tap. With no `<key>.double` binding the single fires immediately (zero
@@ -366,6 +502,8 @@ class RemoteInputHandler {
         }
         heldKeys.removeAll()
         buttonState.removeAll()
+        stopAllKeyRepeats()   // don't leak auto-repeat timers if the remote disconnects mid-hold
+        disarmSpacesMode()    // and don't leave Spaces Mode armed with no device attached
     }
 
     private func postKey(keyCode: Int, flags: CGEventFlags, keyDown: Bool) {

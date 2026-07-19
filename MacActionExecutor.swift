@@ -32,6 +32,11 @@ final class MacActionExecutor: ActionExecutor {
             AppleScriptRunner.run(script)
         case .space(let direction):
             Spaces.switchSpace(direction)
+        case .repeatKey(let keys, _, _):
+            // The auto-repeat cadence is driven by RemoteInputHandler (press starts the repeat,
+            // release stops it). Here we just synthesize a single keystroke — this handles the
+            // first fire and any stray dispatch (e.g. bound to a swipe/tap that has no hold state).
+            Keys.synthesize(keys)
         case .mode:
             break // handled inside Controller; never reaches the executor
         }

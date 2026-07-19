@@ -19,6 +19,7 @@ struct TuneSettings: Codable, Equatable {
     var pressMoveMax: Double
     var holdThreshold: Double
     var doubleTapWindow: Double
+    var spacesModeWindow: Double
     var circularEnabled: Bool
     var circularMinRadius: Double
     var circularStartThreshold: Double
@@ -29,9 +30,9 @@ struct TuneSettings: Codable, Equatable {
     static let `default` = TuneSettings(
         cursorSpeed: 0.6, cursorDeadzone: 0.006, accelMin: 0.4, accelMax: 2.6,
         accelLowSpeed: 0.008, accelHighSpeed: 0.06, clickRiseThreshold: 0.1, pressMoveMax: 0.025,
-        holdThreshold: 0.5, doubleTapWindow: 0.3, circularEnabled: true, circularMinRadius: 0.35,
-        circularStartThreshold: 0.35, circularPixelsPerRadian: 160, circularScrollEase: 0.3,
-        circularInvert: false)
+        holdThreshold: 0.5, doubleTapWindow: 0.3, spacesModeWindow: 5.0, circularEnabled: true,
+        circularMinRadius: 0.35, circularStartThreshold: 0.35, circularPixelsPerRadian: 160,
+        circularScrollEase: 0.3, circularInvert: false)
 
     /// Seed from the config file's settings block (used on first run only).
     init(seed s: Config.Settings) {
@@ -45,6 +46,7 @@ struct TuneSettings: Codable, Equatable {
         pressMoveMax = s.pressMoveMax
         holdThreshold = s.holdThreshold
         doubleTapWindow = s.doubleTapWindow
+        spacesModeWindow = s.spacesModeWindow
         circularEnabled = s.circularScroll.enabled
         circularMinRadius = s.circularScroll.minRadius
         circularStartThreshold = s.circularScroll.startThreshold
@@ -55,7 +57,8 @@ struct TuneSettings: Codable, Equatable {
 
     init(cursorSpeed: Double, cursorDeadzone: Double, accelMin: Double, accelMax: Double,
          accelLowSpeed: Double, accelHighSpeed: Double, clickRiseThreshold: Double,
-         pressMoveMax: Double, holdThreshold: Double, doubleTapWindow: Double, circularEnabled: Bool,
+         pressMoveMax: Double, holdThreshold: Double, doubleTapWindow: Double,
+         spacesModeWindow: Double, circularEnabled: Bool,
          circularMinRadius: Double, circularStartThreshold: Double, circularPixelsPerRadian: Double,
          circularScrollEase: Double, circularInvert: Bool) {
         self.cursorSpeed = cursorSpeed
@@ -68,6 +71,7 @@ struct TuneSettings: Codable, Equatable {
         self.pressMoveMax = pressMoveMax
         self.holdThreshold = holdThreshold
         self.doubleTapWindow = doubleTapWindow
+        self.spacesModeWindow = spacesModeWindow
         self.circularEnabled = circularEnabled
         self.circularMinRadius = circularMinRadius
         self.circularStartThreshold = circularStartThreshold

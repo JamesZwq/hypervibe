@@ -166,10 +166,14 @@ struct SettingsView: View {
                    value: $model.tune.doubleTapWindow, range: 0.15...0.6,
                    minIcon: "hare.fill", maxIcon: "tortoise.fill",
                    display: { String(format: "%.2fs", $0) })
+            slider(icon: "rectangle.on.rectangle", title: "Spaces Mode timeout",
+                   value: $model.tune.spacesModeWindow, range: 2.0...15.0,
+                   minIcon: "hare.fill", maxIcon: "tortoise.fill",
+                   display: { String(format: "%.0fs", $0) })
         } header: {
             Text("Buttons")
         } footer: {
-            Text("Long-press time: how long to hold a button before its \u{201C}.hold\u{201D} fires. Double-tap speed: the window for a second tap to trigger a \u{201C}.double\u{201D} binding instead of a second single press.")
+            Text("Long-press time: how long to hold a button before its \u{201C}.hold\u{201D} fires. Double-tap speed: the window for a second tap to trigger a \u{201C}.double\u{201D} binding instead of a second single press. Spaces Mode timeout: after long-pressing ring-up to arm desktop switching, how long without a left/right switch before it disarms.")
         }
     }
 
