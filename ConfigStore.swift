@@ -41,6 +41,10 @@ enum ConfigStore {
     /// file, so there is no save→reload→save loop.
     static func save(_ config: Config) throws {
         let text = try ConfigWriter.serialize(config)
+        // Guard: never write a config the loader would reject. Without this, a bad mutation would
+        // atomically overwrite config.jsonc with an unloadable file → the watcher reloads it → the
+        // app drops to `minimalFallback` (all bindings dead) while the broken file sits on disk.
+        _ = try ConfigLoader.load(text)
         try text.write(to: path, atomically: true, encoding: .utf8)
     }
 

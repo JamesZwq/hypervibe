@@ -85,7 +85,7 @@ cat > "${APP_BUNDLE}/Contents/Info.plist" <<EOF
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 HyperVibe Contributors</string>
 	<key>LSMinimumSystemVersion</key>
-	<string>11.0</string>
+	<string>13.0</string>
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSPrincipalClass</key>

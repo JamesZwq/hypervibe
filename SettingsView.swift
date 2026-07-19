@@ -32,7 +32,10 @@ struct SettingsView: View {
             case .layout:
                 if let config = model.config {
                     LayoutView(config: config, onSave: { newConfig in
-                        try? ConfigStore.save(newConfig)   // atomic write → hot-reloads → refreshes model.config
+                        // Atomic, validated write → hot-reloads → refreshes model.config. A failed
+                        // write (invalid config / permissions) leaves the old file intact; log it.
+                        do { try ConfigStore.save(newConfig) }
+                        catch { NSLog("[siriRemote] config save failed: \(error)") }
                     })
                 } else {
                     Spacer()
@@ -41,7 +44,10 @@ struct SettingsView: View {
                 }
             }
         }
-        .frame(width: tab == .layout ? 900 : 452, height: 980)
+        // Flexible height (not fixed) so the window can be shrunk to fit smaller displays — the
+        // inner ScrollView/Form then scroll instead of the content being clipped.
+        .frame(width: tab == .layout ? 900 : 452)
+        .frame(minHeight: 480, idealHeight: 900, maxHeight: .infinity)
     }
 
     // MARK: - Tab switcher

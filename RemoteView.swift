@@ -83,7 +83,7 @@ struct RemoteView: View {
 
             // Face buttons — LEFT column: Back, Play/Pause, Mute; RIGHT column: TV, then Volume pill.
             Group {
-                FaceButton(systemName: "chevron.backward", key: "button.back",
+                FaceButton(systemName: "chevron.backward", key: "button.menu",
                            iconSize: 15, weight: .semibold, highlightedKey: highlightedKey, onSelect: onSelect)
                     .position(x: 40.5, y: 199)
                 FaceButton(systemName: "tv", key: "button.tv",

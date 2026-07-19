@@ -30,6 +30,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // Settings UI
     private var settingsModel: SettingsModel?
     private var settingsWindow: SettingsWindowController?
+    /// Debounces persisting Tuning-tab slider changes back into config.jsonc.
+    private var tunePersistWork: DispatchWorkItem?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         print("🚀 HyperVibe starting...")
@@ -93,7 +95,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Tuning: config.jsonc's `settings` block is the source of truth — always seed from it (a
         // stale saved tune no longer shadows config edits), and re-seed on every hot-reload below.
         let model = SettingsModel(initial: TuneSettings(seed: config.settings))
-        model.onApply = { [weak self] tune in self?.applyTune(tune) }
+        model.onApply = { [weak self] tune in
+            self?.applyTune(tune)
+            self?.scheduleTunePersist()   // write slider values back into config.jsonc (debounced)
+        }
         model.config = config   // publish the live config to the Settings "Layout" tab
         settingsModel = model
         let settingsWin = SettingsWindowController(model: model)
@@ -117,6 +122,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         configWatcher = ConfigFileWatcher(url: ConfigStore.path) { [weak self] in
             let reloaded = ConfigStore.loadConfig()
             self?.controller?.reload(config: reloaded)
+            // reload() resets the engine to the default mode; re-apply the current frontmost app so
+            // per-app bindings (e.g. terminal repeat-Delete) don't silently drop to global until the
+            // next app switch. (AppWatcher only fires on activation *changes*.)
+            if let bid = NSWorkspace.shared.frontmostApplication?.bundleIdentifier {
+                self?.controller?.frontmostAppChanged(bundleID: bid)
+            }
             self?.settingsModel?.config = reloaded   // keep the Layout tab in sync on hot-reload
             // Live-tune: re-seed tuning from the config's `settings` so editing config.jsonc updates
             // cursor feel / thresholds immediately. The @Published didSet applies it (→ applyTune)
@@ -203,6 +214,43 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         findCursorEnabled = t.findCursorEnabled
     }
 
+    /// Persist Tuning-tab changes back into config.jsonc so config stays the single source of truth
+    /// (a stale UserDefaults tune can no longer shadow it, and Layout-tab saves no longer revert
+    /// tuning). Debounced — a slider drag fires `onApply` continuously; we only write ~0.4s after the
+    /// last change to avoid a file write + engine reload per tick.
+    private func scheduleTunePersist() {
+        tunePersistWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.persistTuneToConfig() }
+        tunePersistWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
+    }
+
+    private func persistTuneToConfig() {
+        guard let model = settingsModel, let base = model.config else { return }
+        let t = model.tune
+        let merged = base.withSettingsUpdated { s in
+            s.cursorSpeed = t.cursorSpeed
+            s.cursorDeadzone = t.cursorDeadzone
+            s.accelMin = t.accelMin
+            s.accelMax = t.accelMax
+            s.accelLowSpeed = t.accelLowSpeed
+            s.accelHighSpeed = t.accelHighSpeed
+            s.clickRiseThreshold = t.clickRiseThreshold
+            s.pressMoveMax = t.pressMoveMax
+            s.holdThreshold = t.holdThreshold
+            s.holdThreshold2 = t.holdThreshold2
+            s.holdThreshold3 = t.holdThreshold3
+            s.doubleTapWindow = t.doubleTapWindow
+            s.spacesModeWindow = t.spacesModeWindow
+            s.findCursorEnabled = t.findCursorEnabled
+            s.circularScroll = t.circularConfig
+        }
+        // No change (e.g. this fire came from a hot-reload re-seed) → don't churn the file.
+        guard merged != base else { return }
+        do { try ConfigStore.save(merged) }
+        catch { NSLog("[siriRemote] tune persist failed: \(error)") }
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
     }
@@ -258,7 +306,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // pass through. (true = consume, false = pass through.)
         let fromRemote = RemoteInputHandler.lastProcessedButton == buttonName
             && Self.machDeltaToSeconds(from: RemoteInputHandler.lastProcessedTime) < 0.3
-        let bound = controller?.hasBinding(for: "button.\(buttonName)") ?? false
+        // Bound if ANY variant is mapped — tap, double, or a hold stage. A hold-only binding still
+        // means the HID path owns this button, so the native media key must be suppressed too
+        // (otherwise every press double-fires: native media key + our hold action on long-press).
+        let base = "button.\(buttonName)"
+        let bound = [base, base + ".double", base + ".hold", base + ".hold2", base + ".hold3"]
+            .contains { controller?.hasBinding(for: $0) ?? false }
         return fromRemote && bound
     }
     

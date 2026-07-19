@@ -405,8 +405,16 @@ struct LayoutView: View {
             InputRow(key: "button.volumeUp",   name: "Volume +"),
             InputRow(key: "button.volumeDown", name: "Volume −"),
             InputRow(key: "button.tv",         name: "TV"),
-            InputRow(key: "button.back",       name: "Back"),
+            // The physical Back button (‹) reports HID usage 0x86 → config key `button.menu`.
+            InputRow(key: "button.menu",       name: "Back"),
             InputRow(key: "button.power",      name: "Power"),
+        ]),
+        InputGroup(name: "Gestures", rows: [
+            InputRow(key: "swipe.up",    name: "Swipe ↑"),
+            InputRow(key: "swipe.down",  name: "Swipe ↓"),
+            InputRow(key: "swipe.left",  name: "Swipe ←"),
+            InputRow(key: "swipe.right", name: "Swipe →"),
+            InputRow(key: "tap.two",     name: "Two-finger tap"),
         ]),
     ]
 
@@ -421,9 +429,9 @@ struct LayoutView: View {
         case "button.volumeUp":   return "Volume +"
         case "button.volumeDown": return "Volume −"
         case "button.tv":         return "Control Center"
-        case "button.back":       return "Back"
+        case "button.menu":       return "Back"
         case "button.power":      return "Sleep / Wake"
-        default:                  return "—"   // ring directions (incl. .hold)
+        default:                  return "—"   // ring directions (incl. .hold), swipes, tap.two
         }
     }
 
@@ -488,14 +496,20 @@ struct LayoutView: View {
 
     private struct Slot { let slotKey: String; let label: String }
     private func slots(for base: String) -> [Slot] {
-        guard base.hasPrefix("ring.") || base.hasPrefix("button.") else { return [] }
-        return [
-            Slot(slotKey: base,             label: "Tap"),
-            Slot(slotKey: base + ".double", label: "Double-tap"),
-            Slot(slotKey: base + ".hold",   label: "Hold"),
-            Slot(slotKey: base + ".hold2",  label: "Hold ··"),
-            Slot(slotKey: base + ".hold3",  label: "Hold ···"),
-        ]
+        if base.hasPrefix("ring.") || base.hasPrefix("button.") {
+            return [
+                Slot(slotKey: base,             label: "Tap"),
+                Slot(slotKey: base + ".double", label: "Double-tap"),
+                Slot(slotKey: base + ".hold",   label: "Hold"),
+                Slot(slotKey: base + ".hold2",  label: "Hold ··"),
+                Slot(slotKey: base + ".hold3",  label: "Hold ···"),
+            ]
+        }
+        // Swipes / two-finger tap are one-shot gesture events — a single action, no hold/double.
+        if base.hasPrefix("swipe.") || base == "tap.two" {
+            return [Slot(slotKey: base, label: "Action")]
+        }
+        return []
     }
 
     private func saveSlot(_ slotKey: String, _ action: Action?) {
@@ -518,7 +532,7 @@ struct LayoutView: View {
             HStack(spacing: 8) {
                 Text("EDIT").font(.system(size: 11, weight: .heavy)).tracking(1).foregroundStyle(.secondary)
                 Text(Self.inputName(base)).font(.system(size: 13, weight: .semibold))
-                Text("in \(Self.inputName(mode) == mode ? mode : mode)")
+                Text("in \(mode == config.defaultModeName ? "Global" : mode)")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
                 Spacer()
                 Button { selectedKey = nil } label: {
@@ -574,18 +588,28 @@ private struct ActionSlotEditor: View {
     @State private var text: String = ""
     @State private var pick: String = ""
     @State private var value: Double = 0
+    // Preserved so editing one field of a multi-field action doesn't reset the others (#8):
+    @State private var repDelay: Double = 0.3       // repeatKey timing, kept from the loaded action
+    @State private var repInterval: Double = 0.045
+    @State private var altLaunch: String = ""       // the launch field NOT being edited (url ↔ app)
+    @FocusState private var focused: Bool
 
     var body: some View {
         HStack(spacing: 8) {
             // Computed binding: `set` runs only on a USER pick, so `load()` (which sets @State
-            // directly) never triggers a save → no reload loop.
-            Picker("", selection: Binding(get: { kind }, set: { kind = $0; defaultsForKind(); commit() })) {
+            // directly) never triggers a save → no reload loop. On a type change we RESET the params
+            // so a leftover value from the old type can't be written as the new type (e.g. keystroke
+            // "up" → shell "up", which would then EXECUTE `up`).
+            Picker("", selection: Binding(get: { kind }, set: { kind = $0; resetParamsForKind(); commit() })) {
                 ForEach(Kind.allCases) { Text($0.rawValue).tag($0) }
             }
             .labelsHidden().frame(width: 128)
             param
         }
         .onAppear(perform: load)
+        // Commit text fields when focus LEAVES (not only on Enter) — otherwise typing a value then
+        // clicking another row (which changes this editor's `.id` and discards its @State) loses it.
+        .onChange(of: focused) { isFocused in if !isFocused { commit() } }
     }
 
     @ViewBuilder private var param: some View {
@@ -593,22 +617,30 @@ private struct ActionSlotEditor: View {
         case .none:
             Text("does nothing").foregroundStyle(.secondary).font(.system(size: 12))
         case .keystroke, .repeatKey:
-            TextField("cmd+shift+t", text: $text).textFieldStyle(.roundedBorder).frame(width: 170).onSubmit(commit)
+            TextField("cmd+shift+t", text: $text).textFieldStyle(.roundedBorder).frame(width: 170)
+                .focused($focused).onSubmit(commit)
         case .shell:
-            TextField("shell command", text: $text).textFieldStyle(.roundedBorder).frame(width: 240).onSubmit(commit)
+            TextField("shell command", text: $text).textFieldStyle(.roundedBorder).frame(width: 240)
+                .focused($focused).onSubmit(commit)
         case .applescript:
-            TextField("AppleScript source", text: $text).textFieldStyle(.roundedBorder).frame(width: 240).onSubmit(commit)
+            TextField("AppleScript source", text: $text).textFieldStyle(.roundedBorder).frame(width: 240)
+                .focused($focused).onSubmit(commit)
         case .launchApp:
-            TextField("App name (e.g. Safari)", text: $text).textFieldStyle(.roundedBorder).frame(width: 200).onSubmit(commit)
+            TextField("App name (e.g. Safari)", text: $text).textFieldStyle(.roundedBorder).frame(width: 200)
+                .focused($focused).onSubmit(commit)
         case .openURL:
-            TextField("https://…", text: $text).textFieldStyle(.roundedBorder).frame(width: 220).onSubmit(commit)
+            TextField("https://…", text: $text).textFieldStyle(.roundedBorder).frame(width: 220)
+                .focused($focused).onSubmit(commit)
         case .media:  enumPicker(["playpause","next","previous","volup","voldown","mute"])
         case .mouse:  enumPicker(["click","rightclick","scroll","move"])
         case .space:  enumPicker(["left","right"])
         case .layer, .mode: enumPicker(modeNames.isEmpty ? ["global"] : modeNames)
         case .brightness:
             HStack(spacing: 6) {
-                Slider(value: Binding(get: { value }, set: { value = $0; commit() }), in: 0...1).frame(width: 130)
+                // Commit only when the drag ends (onEditingChanged → false), not on every tick —
+                // each commit is a file write + engine reload.
+                Slider(value: $value, in: 0...1, onEditingChanged: { editing in if !editing { commit() } })
+                    .frame(width: 130)
                 Text("\(Int(value*100))%").font(.system(size: 11)).monospacedDigit().foregroundStyle(.secondary)
             }
         }
@@ -628,24 +660,28 @@ private struct ActionSlotEditor: View {
         case .media(let k):           kind = .media; pick = k
         case .mouse(let op):          kind = .mouse; pick = op
         case .launch(let app, let url):
-            if let app = app { kind = .launchApp; text = app } else { kind = .openURL; text = url ?? "" }
+            if let app = app { kind = .launchApp; text = app; altLaunch = url ?? "" }
+            else { kind = .openURL; text = url ?? ""; altLaunch = "" }
         case .shell(let c):           kind = .shell; text = c
         case .applescript(let s):     kind = .applescript; text = s
         case .mode(let to):           kind = .mode; pick = to
         case .layer(let n):           kind = .layer; pick = n
         case .space(let d):           kind = .space; pick = d < 0 ? "left" : "right"
-        case .repeatKey(let k, _, _): kind = .repeatKey; text = k
+        case .repeatKey(let k, let d, let i): kind = .repeatKey; text = k; repDelay = d; repInterval = i
         case .brightness(let v):      kind = .brightness; value = v
         }
     }
 
-    private func defaultsForKind() {
+    /// On a type change, clear params so a leftover value from the previous type is never written as
+    /// the new type; seed sensible defaults for the picker-based types.
+    private func resetParamsForKind() {
+        text = ""; altLaunch = ""; repDelay = 0.3; repInterval = 0.045; value = 0
         switch kind {
-        case .media where pick.isEmpty: pick = "playpause"
-        case .mouse where pick.isEmpty: pick = "click"
-        case .space where pick.isEmpty: pick = "left"
-        case .layer, .mode: if pick.isEmpty { pick = modeNames.first ?? "global" }
-        default: break
+        case .media:        pick = "playpause"
+        case .mouse:        pick = "click"
+        case .space:        pick = "left"
+        case .layer, .mode: pick = modeNames.first ?? "global"
+        default:            pick = ""
         }
     }
 
@@ -655,11 +691,11 @@ private struct ActionSlotEditor: View {
         switch kind {
         case .none:        return nil
         case .keystroke:   return text.isEmpty ? nil : .keystroke(keys: text)
-        case .repeatKey:   return text.isEmpty ? nil : .repeatKey(keys: text, delay: 0.3, interval: 0.045)
+        case .repeatKey:   return text.isEmpty ? nil : .repeatKey(keys: text, delay: repDelay, interval: repInterval)
         case .media:       return .media(key: pick.isEmpty ? "playpause" : pick)
         case .mouse:       return .mouse(op: pick.isEmpty ? "click" : pick)
-        case .launchApp:   return text.isEmpty ? nil : .launch(app: text, url: nil)
-        case .openURL:     return text.isEmpty ? nil : .launch(app: nil, url: text)
+        case .launchApp:   return text.isEmpty ? nil : .launch(app: text, url: altLaunch.isEmpty ? nil : altLaunch)
+        case .openURL:     return text.isEmpty ? nil : .launch(app: altLaunch.isEmpty ? nil : altLaunch, url: text)
         case .shell:       return text.isEmpty ? nil : .shell(command: text)
         case .applescript: return text.isEmpty ? nil : .applescript(script: text)
         case .space:       return .space(direction: pick == "left" ? -1 : 1)

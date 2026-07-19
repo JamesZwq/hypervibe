@@ -226,6 +226,13 @@ class RemoteInputHandler {
         //    hold/double discrimination — a press fires once and starts an auto-repeat, and the
         //    release stops it. (Because this bypasses the `.hold` path, an inherited `<key>.hold`
         //    binding is intentionally NOT reachable for a `.repeatKey` key.)
+        // Any release of a button that has a live repeat timer MUST stop it — even if the key no
+        // longer resolves to `.repeatKey` (config hot-reload or an app/mode switch mid-hold, e.g. the
+        // repeating Delete closed the window and focus moved). Otherwise the timer runs forever.
+        if !pressed, repeatTimers[buttonName] != nil {
+            stopKeyRepeat(buttonName)
+            return
+        }
         if case let .repeatKey(keys, delay, interval)? = controller.resolvedAction(for: tapKey) {
             if pressed {
                 startKeyRepeat(buttonName, tapKey: tapKey, keys: keys, delay: delay, interval: interval)

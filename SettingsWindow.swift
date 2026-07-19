@@ -22,12 +22,19 @@ final class SettingsWindowController {
             hosting.sizingOptions = [.preferredContentSize]
             let win = NSWindow(contentViewController: hosting)
             win.title = "siriRemote Settings"
-            win.styleMask = [.titled, .closable, .fullSizeContentView]
+            win.styleMask = [.titled, .closable, .resizable, .fullSizeContentView]
             win.titlebarAppearsTransparent = true
             win.titleVisibility = .hidden
             win.isMovableByWindowBackground = true
             win.isReleasedWhenClosed = false
+            win.contentMinSize = NSSize(width: 452, height: 480)
             win.center()
+            // Don't open taller than the screen (a 13" display has ~900pt usable).
+            if let vis = win.screen?.visibleFrame ?? NSScreen.main?.visibleFrame,
+               win.frame.height > vis.height {
+                win.setContentSize(NSSize(width: win.frame.width, height: vis.height - 40))
+                win.center()
+            }
             window = win
         }
         NSApp.activate(ignoringOtherApps: true)

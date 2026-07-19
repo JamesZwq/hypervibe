@@ -16,8 +16,12 @@ import SceneKit.ModelIO
 import AppKit
 
 struct RemoteScene3D: View {
-    /// Cached once — building the scene parses the mesh + generates the environment image.
-    @State private var scene: SCNScene? = RemoteScene3D.makeScene()
+    /// Built once for the whole process — parsing the mesh + smoothing normals + rendering the
+    /// environment is expensive, and a SwiftUI `@State` default expression re-runs on every init
+    /// (i.e. every parent re-render). A `static let` computes lazily exactly once; the `@State`
+    /// just references it so the same scene is reused across 2D↔3D toggles.
+    private static let cachedScene: SCNScene? = makeScene()
+    @State private var scene: SCNScene? = RemoteScene3D.cachedScene
 
     var body: some View {
         Group {
