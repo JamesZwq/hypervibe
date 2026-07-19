@@ -30,6 +30,8 @@ final class MacActionExecutor: ActionExecutor {
             Shell.run(command)
         case .applescript(let script):
             AppleScriptRunner.run(script)
+        case .space(let direction):
+            Spaces.switchSpace(direction)
         case .mode:
             break // handled inside Controller; never reaches the executor
         }

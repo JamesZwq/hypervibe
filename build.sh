@@ -26,6 +26,7 @@ SWIFT_FILES=(
     # --- Config engine integration (this fork) ---
     "KeyMap.swift"
     "MacActionExecutor.swift"
+    "Spaces.swift"
     "AppWatcher.swift"
     "ConfigStore.swift"
     "ConfigFileWatcher.swift"
