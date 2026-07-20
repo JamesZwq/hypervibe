@@ -51,12 +51,6 @@ if [ -d "Resources" ]; then
     echo "Menu bar icons added to app bundle"
 fi
 
-# Copy the 3rd-gen remote STL (used by the Layout tab's metallic 3D model)
-if [ -f "Resources/SiriRemote.stl" ]; then
-    cp "Resources/SiriRemote.stl" "${APP_BUNDLE}/Contents/Resources/SiriRemote.stl"
-    echo "3D remote model (SiriRemote.stl) added to app bundle"
-fi
-
 # Create proper Info.plist with all required keys
 echo "Creating Info.plist..."
 cat > "${APP_BUNDLE}/Contents/Info.plist" <<EOF
@@ -108,12 +102,21 @@ chmod +x "${APP_BUNDLE}/Contents/MacOS/$APP_NAME"
 # gives a stable identity for TCC (Accessibility / Input Monitoring). Entitlements are embedded but
 # only matter under hardened runtime, so they're harmless here.
 if [ -f "HyperVibe.entitlements" ]; then
-    echo "Ad-hoc signing (no hardened runtime)..."
-    codesign --force \
-        --entitlements "HyperVibe.entitlements" \
-        --sign - \
-        "${APP_BUNDLE}"
-    codesign -dvv "${APP_BUNDLE}" 2>&1 | grep -E "(flags|Identifier)" || true
+    # Prefer a STABLE self-signed identity ("siriRemote Local Signing") so the app's TCC grants
+    # (Accessibility / Input Monitoring) survive rebuilds — ad-hoc's cdhash changes every build and
+    # macOS treats each build as a new app, forcing re-approval. Fall back to ad-hoc if absent.
+    SIGN_ID="siriRemote Local Signing"
+    SIGN_KC="$HOME/Library/Keychains/siriremote-signing.keychain-db"
+    if [ -f "$SIGN_KC" ] && security find-identity -p codesigning "$SIGN_KC" 2>/dev/null | grep -q "$SIGN_ID"; then
+        echo "Signing with stable local identity ($SIGN_ID)..."
+        security unlock-keychain -p siriremote-local "$SIGN_KC" 2>/dev/null || true
+        codesign --force --entitlements "HyperVibe.entitlements" \
+            --sign "$SIGN_ID" --keychain "$SIGN_KC" "${APP_BUNDLE}"
+    else
+        echo "Ad-hoc signing (no stable identity found; TCC will re-prompt on each rebuild)..."
+        codesign --force --entitlements "HyperVibe.entitlements" --sign - "${APP_BUNDLE}"
+    fi
+    codesign -dvv "${APP_BUNDLE}" 2>&1 | grep -E "(Authority|flags|Identifier)" || true
 fi
 
 echo ""

@@ -282,6 +282,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
     }
+
+    /// Re-opening the app (double-clicking HyperVibe.app while it's already running, or clicking it
+    /// in the Dock) opens the Settings window. This is the reliable way to reach the UI when the
+    /// menu-bar icon is hidden — e.g. squeezed behind the notch on a crowded menu bar.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        settingsWindow?.show()
+        return true
+    }
     
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         cleanup()
