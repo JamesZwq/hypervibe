@@ -33,11 +33,18 @@ class RemoteInputHandler {
     private var holdStageTimers: [String: [DispatchWorkItem]] = [:]
     private var deepestStage: [String: Int] = [:]
 
-    /// Momentary layer (Feature: LAYER): the HID button currently holding a `.layer` binding down.
-    /// Pressing a `.layer` key pushes its layer (Controller.pushLayer) and records the button here;
-    /// its release pops the layer. A newer layer press overwrites this, so the older button's
-    /// release is ignored (the newer layer stays until its own button releases).
-    private var layerButton: String?
+    /// Layer key (Feature: LAYER). A `.layer` binding gives its button BOTH activation styles:
+    ///   • HOLD it and press other keys → momentary (the layer is active only while held).
+    ///   • TAP it (press+release with no other key in between) → TOGGLE a *sticky* layer that
+    ///     persists until you tap the key again.
+    /// Permissive-hold: on press we engage the layer immediately (so momentary has ZERO latency),
+    /// and on release we decide tap-vs-hold from `layerUsed` (whether another key was pressed during
+    /// the hold). `stickyLayer` survives button releases; a momentary hold temporarily overrides it
+    /// and reverts to it on release. A newer layer press overwrites the held-button tracking.
+    private var layerButton: String?     // HID button currently held as a layer key
+    private var layerName: String?       // the layer that button engaged
+    private var layerUsed = false        // another key was pressed during this hold → momentary use
+    private var stickyLayer: String?     // toggled-on layer that persists after release (nil = none)
 
     /// Double-tap: if a `<key>.double` binding exists, the single is HELD for `doubleTapWindow` to
     /// see whether a 2nd tap arrives. A lone tap fires `<key>` only after the window elapses; a
@@ -242,22 +249,40 @@ class RemoteInputHandler {
             return
         }
 
-        // 3) Momentary layer: a `.layer` binding acts like a shift key. Pressing it pushes a
-        //    second layer of bindings (resolved instead of the app mode) and CONSUMES the press —
-        //    the layer key itself fires nothing; the matching release pops it. Keys pressed while
-        //    it is held resolve in the layer automatically (Controller.handle/hasBinding/
-        //    resolvedAction all consult the active layer). A newer layer press replaces an older.
+        // 3) Layer key: a `.layer` binding acts like a shift/layer key with BOTH activation styles
+        //    (see the `layerButton`/`stickyLayer` docs above). The layer key CONSUMES its own press —
+        //    it fires nothing itself; keys pressed while a layer is active resolve in that layer
+        //    (Controller.handle/hasBinding/resolvedAction all consult the active layer).
         if pressed {
             if case let .layer(name)? = controller.resolvedAction(for: tapKey) {
-                controller.pushLayer(name)
+                controller.pushLayer(name)          // engage immediately → momentary has no latency
                 layerButton = buttonName
-                print("🔘 \(tapKey) → layer '\(name)' (push)")
+                layerName = name
+                layerUsed = false
+                print("🔘 \(tapKey) → layer '\(name)' (engage)")
                 return
             }
+            // Any OTHER key pressed while a layer button is held marks it as a momentary USE (so its
+            // release reverts the layer instead of toggling it sticky). Falls through to run the key.
+            if layerButton != nil, buttonName != layerButton { layerUsed = true }
         } else if layerButton == buttonName {
-            controller.popLayer()
+            let name = layerName ?? ""
+            if layerUsed {
+                // Used to shift other keys → momentary. Revert to the sticky layer if one is on.
+                if let s = stickyLayer { controller.pushLayer(s) } else { controller.popLayer() }
+                print("🔘 \(tapKey) → layer '\(name)' (momentary release)")
+            } else if stickyLayer == name {
+                stickyLayer = nil                    // tap while this layer is sticky-on → toggle OFF
+                controller.popLayer()
+                print("🔘 \(tapKey) → layer '\(name)' (toggle off)")
+            } else {
+                stickyLayer = name                   // bare tap → toggle ON (sticky; persists)
+                controller.pushLayer(name)
+                print("🔘 \(tapKey) → layer '\(name)' (toggle on)")
+            }
             layerButton = nil
-            print("🔘 \(tapKey) → layer (pop)")
+            layerName = nil
+            layerUsed = false
             return
         }
 
@@ -593,9 +618,12 @@ class RemoteInputHandler {
         stopAllKeyRepeats()   // don't leak auto-repeat timers if the remote disconnects mid-hold
         cancelHoldStages()    // and don't leave release-to-select stage timers pending
         disarmSpacesMode()    // and don't leave Spaces Mode armed with no device attached
-        if layerButton != nil {   // and don't leave a momentary layer stuck active
+        if layerButton != nil || stickyLayer != nil {   // don't leave a layer (held or sticky) active
             controller?.popLayer()
             layerButton = nil
+            layerName = nil
+            layerUsed = false
+            stickyLayer = nil
         }
     }
 

@@ -66,7 +66,9 @@ enum ConfigStore {
       //     Multi-stage: also ".hold2" / ".hold3" for deeper holds. Release-to-select — keep
       //     holding to reach a deeper stage; the deepest stage reached fires when you let go.
       // Actions: keystroke(keys) media(key) mouse(op) launch(app|url)
-      //          shell(command) applescript(script) mode(to)
+      //          shell(command) applescript(script) mode(to) layer(to)
+      //   layer(to): the bound key becomes a layer key — TAP it to toggle that mode sticky
+      //     (persists until tapped again), or HOLD it and press other keys for momentary use.
       // A binding OVERRIDES native behavior; unbound buttons stay native.
       "settings": {
         "defaultMode": "global",

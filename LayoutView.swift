@@ -634,7 +634,13 @@ private struct ActionSlotEditor: View {
         case .media:  enumPicker(["playpause","next","previous","volup","voldown","mute"])
         case .mouse:  enumPicker(["click","rightclick","scroll","move"])
         case .space:  enumPicker(["left","right"])
-        case .layer, .mode: enumPicker(modeNames.isEmpty ? ["global"] : modeNames)
+        case .mode:   enumPicker(modeNames.isEmpty ? ["global"] : modeNames)
+        case .layer:
+            HStack(spacing: 8) {
+                enumPicker(modeNames.isEmpty ? ["global"] : modeNames)
+                Text("tap = toggle · hold = momentary")
+                    .font(.system(size: 10)).foregroundStyle(.secondary)
+            }
         case .brightness:
             HStack(spacing: 6) {
                 // Commit only when the drag ends (onEditingChanged → false), not on every tick —
