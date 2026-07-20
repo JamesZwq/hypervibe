@@ -252,81 +252,8 @@ class MenuBarManager {
         settingsItem.target = self
         menu.addItem(settingsItem)
 
-        menu.addItem(NSMenuItem.separator())
-
-        // Button Mappings submenu
-        let mappingsItem = NSMenuItem(title: "Button Mappings", action: nil, keyEquivalent: "")
-        let mappingsSubmenu = NSMenu()
-        
-        let buttons = [
-            ("select", "Trackpad Click"),
-            ("menu", "Menu Button"),
-            ("tv", "TV Button"),
-            ("siri", "Siri Button"),
-            ("playPause", "Play/Pause Button"),
-            ("volumeUp", "Volume Up"),
-            ("volumeDown", "Volume Down"),
-        ]
-        
-        for (key, label) in buttons {
-            let buttonItem = NSMenuItem(title: label, action: nil, keyEquivalent: "")
-            let actionSubmenu = NSMenu()
-            let canHold = holdCapableButtons.contains(key)
-
-            for action in ButtonAction.allCases {
-                // Voice-dictation actions require press+release tracking; hide them on tap-only buttons.
-                if action.requiresHold && !canHold { continue }
-                // Mouse Click is only meaningful for the trackpad click button.
-                if action == .trackpadClick && key != "select" { continue }
-
-                let actionItem = NSMenuItem(title: action.rawValue, action: #selector(changeMapping(_:)), keyEquivalent: "")
-                actionItem.target = self
-                actionItem.representedObject = (key, action)
-
-                if buttonMappings[key] == action {
-                    actionItem.state = .on
-                }
-
-                actionSubmenu.addItem(actionItem)
-            }
-
-            buttonItem.submenu = actionSubmenu
-            mappingsSubmenu.addItem(buttonItem)
-        }
-        
-        mappingsItem.submenu = mappingsSubmenu
-        menu.addItem(mappingsItem)
-
-        // Swipe Gestures submenu
-        let swipeItem = NSMenuItem(title: "Swipe Gestures", action: nil, keyEquivalent: "")
-        let swipeSubmenu = NSMenu()
-        let swipes: [(SwipeDirection, String)] = [
-            (.up,    "Swipe Up"),
-            (.down,  "Swipe Down"),
-            (.left,  "Swipe Left"),
-            (.right, "Swipe Right"),
-        ]
-        for (direction, label) in swipes {
-            let dirItem = NSMenuItem(title: label, action: nil, keyEquivalent: "")
-            let actionsMenu = NSMenu()
-            for action in SwipeAction.allCases {
-                // Each arrow-key action only appears on its matching swipe direction.
-                if action == .leftArrow  && direction != .left  { continue }
-                if action == .rightArrow && direction != .right { continue }
-
-                let actionItem = NSMenuItem(title: action.rawValue, action: #selector(changeSwipeMapping(_:)), keyEquivalent: "")
-                actionItem.target = self
-                actionItem.representedObject = (direction, action)
-                if swipeMappings[direction] == action {
-                    actionItem.state = .on
-                }
-                actionsMenu.addItem(actionItem)
-            }
-            dirItem.submenu = actionsMenu
-            swipeSubmenu.addItem(dirItem)
-        }
-        swipeItem.submenu = swipeSubmenu
-        menu.addItem(swipeItem)
+        // (Button/Swipe mapping is done entirely in Settings → Layout now; the old menu-bar
+        // submenus wrote UserDefaults nothing reads, so they've been removed to avoid dead controls.)
 
         menu.addItem(NSMenuItem.separator())
 

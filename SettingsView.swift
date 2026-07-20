@@ -48,6 +48,7 @@ struct SettingsView: View {
         // inner ScrollView/Form then scroll instead of the content being clipped.
         .frame(width: tab == .layout ? 900 : 452)
         .frame(minHeight: 480, idealHeight: 900, maxHeight: .infinity)
+        .animation(.easeInOut(duration: 0.2), value: tab)
     }
 
     // MARK: - Tab switcher

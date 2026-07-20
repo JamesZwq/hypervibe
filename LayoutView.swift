@@ -11,6 +11,7 @@
 
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 struct LayoutView: View {
     let config: Config
@@ -23,6 +24,7 @@ struct LayoutView: View {
     @State private var selectedKey: String?
     /// Illustration (interactive, editable) vs. metallic 3D model (showpiece).
     @State private var show3D = false
+    @Environment(\.colorScheme) private var scheme
     // "Add app / layer" popover state.
     @State private var showAdd = false
     @State private var addIsLayer = false
@@ -50,21 +52,28 @@ struct LayoutView: View {
     var body: some View {
         Group {
             if scrolls {
-                ScrollView { contentStack }
+                // The editor is DOCKED below the scroll (not appended after the long list), so
+                // selecting a row always shows its editor in the viewport instead of a screen below.
+                VStack(spacing: 0) {
+                    ScrollView { pageBody }
+                    if selectedKey != nil, onSave != nil {
+                        Divider()
+                        editorPanel.background(.bar)
+                    }
+                }
             } else {
-                contentStack
+                pageBody   // snapshot mode (onSave == nil → no editor anyway)
             }
         }
         .background(Color(nsColor: .windowBackgroundColor))
     }
 
-    private var contentStack: some View {
+    private var pageBody: some View {
         VStack(alignment: .leading, spacing: 0) {
             head
             hub
             legend
             stage
-            if selectedKey != nil, onSave != nil { editorPanel }
             foot
         }
         .padding(.bottom, 8)
@@ -173,7 +182,12 @@ struct LayoutView: View {
                 Text("A layer is a mode you activate by holding a key (the Layer action). It inherits Global.")
                     .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             } else {
-                TextField("App bundle id (e.g. com.apple.Notes)", text: $addName).textFieldStyle(.roundedBorder)
+                HStack(spacing: 6) {
+                    TextField("App bundle id (e.g. com.apple.Notes)", text: $addName)
+                        .textFieldStyle(.roundedBorder)
+                    Button { chooseApp() } label: { Image(systemName: "folder") }
+                        .help("Choose an app — its bundle id is filled in automatically")
+                }
                 HStack(spacing: 6) {
                     Text("uses mode").font(.system(size: 11)).foregroundStyle(.secondary)
                     Picker("", selection: $addTargetMode) {
@@ -190,6 +204,19 @@ struct LayoutView: View {
             }
         }
         .padding(16).frame(width: 300)
+    }
+
+    /// Open an app-picker (scoped to /Applications) and fill the bundle-id field from the chosen app.
+    private func chooseApp() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.application]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.prompt = "Choose"
+        if panel.runModal() == .OK, let url = panel.url, let id = Bundle(url: url)?.bundleIdentifier {
+            addName = id
+        }
     }
 
     private func createAdd() {
@@ -210,7 +237,7 @@ struct LayoutView: View {
     private var legend: some View {
         HStack(spacing: 16) {
             legendItem(.accentColor, "Custom in this app")
-            legendItem(.secondary, "Inherited from Global")
+            legendItem(.secondary, "Global / Inherited")
             legendItem(Color.secondary.opacity(0.55), "System / native")
         }
         .font(.system(size: 11.5)).foregroundStyle(.secondary)
@@ -260,9 +287,16 @@ struct LayoutView: View {
                     RemoteScene3D()
                         .frame(width: 190, height: 512)
                         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
+                            .stroke(Color.secondary.opacity(0.18), lineWidth: 1))
+                        .shadow(color: .black.opacity(0.18), radius: 8, y: 4)
                 } else {
-                    RemoteView(highlightedKey: $highlightedKey, onSelect: onSave == nil ? nil : { key in
-                        selectedKey = key       // click a remote button → open its editor row
+                    // The remote reflects the SELECTED input persistently (so it doesn't desync when
+                    // the mouse moves toward the editor); it follows hover only when nothing is
+                    // selected. `editBase` maps the selected row (e.g. ring.up.hold) to its element.
+                    RemoteView(highlightedKey: .constant(selectedKey != nil ? editBase : highlightedKey),
+                               onSelect: onSave == nil ? nil : { key in
+                        selectedKey = key       // click a remote button → open its editor row + keep it lit
                         highlightedKey = key
                     })
                 }
@@ -341,11 +375,16 @@ struct LayoutView: View {
     }
 
     private func tag(_ r: Resolved) -> some View {
+        let dark = scheme == .dark
+        // Readable text (clears WCAG AA ~4.5:1 on the light pill): darken the accent toward black in
+        // light mode / lighten toward white in dark mode; use near-primary greys for the rest.
+        let accentText = Color(nsColor: NSColor.controlAccentColor
+            .blended(withFraction: dark ? 0.5 : 0.5, of: dark ? .white : .black) ?? .controlAccentColor)
         let (bg, fg): (Color, Color)
         switch r.kind {
-        case .custom:    (bg, fg) = (Color.accentColor.opacity(0.15), .accentColor)
-        case .inherited: (bg, fg) = (Color.secondary.opacity(0.15), .secondary)
-        case .system:    (bg, fg) = (Color.secondary.opacity(0.1), Color.secondary.opacity(0.8))
+        case .custom:    bg = Color.accentColor.opacity(dark ? 0.30 : 0.18); fg = accentText
+        case .inherited: bg = Color.secondary.opacity(dark ? 0.30 : 0.20);  fg = .primary.opacity(0.85)
+        case .system:    bg = Color.secondary.opacity(dark ? 0.22 : 0.14);  fg = .primary.opacity(0.62)
         }
         return Text(r.tag)
             .font(.system(size: 10.5, weight: .bold)).tracking(0.3)
@@ -600,8 +639,35 @@ private struct ActionSlotEditor: View {
             // directly) never triggers a save → no reload loop. On a type change we RESET the params
             // so a leftover value from the old type can't be written as the new type (e.g. keystroke
             // "up" → shell "up", which would then EXECUTE `up`).
-            Picker("", selection: Binding(get: { kind }, set: { kind = $0; resetParamsForKind(); commit() })) {
-                ForEach(Kind.allCases) { Text($0.rawValue).tag($0) }
+            Picker("", selection: Binding(get: { kind }, set: { newKind in
+                kind = newKind
+                resetParamsForKind()
+                // Persist immediately only for kinds that are already complete (None = remove, or a
+                // picker/brightness default). Text kinds start EMPTY — committing now would write a
+                // destructive removal; wait for the user to type (commit on submit / focus-loss).
+                if newKind == .none || build() != nil { commit() }
+            })) {
+                Text(Kind.none.rawValue).tag(Kind.none)
+                Section("Keys & media") {
+                    Text(Kind.keystroke.rawValue).tag(Kind.keystroke)
+                    Text(Kind.repeatKey.rawValue).tag(Kind.repeatKey)
+                    Text(Kind.media.rawValue).tag(Kind.media)
+                    Text(Kind.mouse.rawValue).tag(Kind.mouse)
+                    Text(Kind.brightness.rawValue).tag(Kind.brightness)
+                }
+                Section("Apps & web") {
+                    Text(Kind.launchApp.rawValue).tag(Kind.launchApp)
+                    Text(Kind.openURL.rawValue).tag(Kind.openURL)
+                }
+                Section("Scripting") {
+                    Text(Kind.shell.rawValue).tag(Kind.shell)
+                    Text(Kind.applescript.rawValue).tag(Kind.applescript)
+                }
+                Section("Modes & layers") {
+                    Text(Kind.mode.rawValue).tag(Kind.mode)
+                    Text(Kind.layer.rawValue).tag(Kind.layer)
+                    Text(Kind.space.rawValue).tag(Kind.space)
+                }
             }
             .labelsHidden().frame(width: 128)
             param

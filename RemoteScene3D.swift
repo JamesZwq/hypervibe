@@ -87,7 +87,9 @@ struct RemoteScene3D: View {
         let env = studioEnvironment()
         scene.lightingEnvironment.contents = env
         scene.lightingEnvironment.intensity = 1.6
-        scene.background.contents = NSColor.clear
+        // A deliberate soft dark "stage" gradient (not transparent → SwiftUI's SceneView renders an
+        // opaque view, so an intentional backdrop reads as a product viewer rather than a black box).
+        scene.background.contents = backgroundStage()
 
         // Key + rim directional lights for a crisp highlight streak.
         let key = SCNNode(); key.light = SCNLight(); key.light!.type = .directional
@@ -122,6 +124,20 @@ struct RemoteScene3D: View {
         if n.geometry != nil { return n }
         for c in n.childNodes { if let g = firstGeometryNode(c) { return g } }
         return nil
+    }
+
+    /// A subtle dark vertical gradient used as the scene's backdrop — a deliberate "stage" for the
+    /// metallic remote (top a touch lighter, floor darker), so 3D mode looks composed, not blank.
+    static func backgroundStage() -> NSImage {
+        let size = NSSize(width: 4, height: 256)
+        let img = NSImage(size: size)
+        img.lockFocus()
+        NSGradient(colors: [
+            NSColor(srgbRed: 0.17, green: 0.18, blue: 0.21, alpha: 1),
+            NSColor(srgbRed: 0.09, green: 0.09, blue: 0.11, alpha: 1),
+        ])!.draw(in: NSRect(origin: .zero, size: size), angle: -90)
+        img.unlockFocus()
+        return img
     }
 
     /// A soft vertical studio gradient (bright top → dark floor) rendered once into an image,
