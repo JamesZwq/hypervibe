@@ -39,12 +39,25 @@ enum ConfigStore {
     /// The ConfigFileWatcher WILL fire after this write and hot-reload — but it reloads the exact
     /// same values, and nothing in the reload path (`SiriRemoteApp`'s watcher closure) writes the
     /// file, so there is no save→reload→save loop.
+    enum SaveError: Error { case existingFileUnparseable }
+
     static func save(_ config: Config) throws {
         let text = try ConfigWriter.serialize(config)
-        // Guard: never write a config the loader would reject. Without this, a bad mutation would
-        // atomically overwrite config.jsonc with an unloadable file → the watcher reloads it → the
-        // app drops to `minimalFallback` (all bindings dead) while the broken file sits on disk.
+        // Guard 1: never write a config the loader would reject (would drop the app to the empty
+        // fallback while a broken file sits on disk).
         _ = try ConfigLoader.load(text)
+        // Guard 2 (data-loss): if the file on disk currently exists but does NOT parse — e.g. a
+        // hand-edit typo the app is temporarily running the empty fallback for — REFUSE to overwrite
+        // it. The user's real modes/bindings are still in that file; a UI write (built from the
+        // fallback) would erase them. The edit is rejected until the user fixes the file.
+        if let existing = try? String(contentsOf: path, encoding: .utf8),
+           (try? ConfigLoader.load(existing)) == nil {
+            throw SaveError.existingFileUnparseable
+        }
+        // Back up the current good file before overwriting — a one-level safety net.
+        if let existing = try? Data(contentsOf: path) {
+            try? existing.write(to: path.appendingPathExtension("bak"))
+        }
         try text.write(to: path, atomically: true, encoding: .utf8)
     }
 

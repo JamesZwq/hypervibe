@@ -134,6 +134,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         configWatcher = ConfigFileWatcher(url: ConfigStore.path) { [weak self] in
             let reloaded = ConfigStore.loadConfig()
+            // If a sticky layer's mode was deleted/renamed in the edit, clear it — otherwise every
+            // key would resolve against a missing layer (→ nil → all bindings dead) with no way to
+            // pop it. Do this BEFORE reload so the pop lands on the old engine cleanly.
+            if let layer = self?.controller?.currentLayer, reloaded.modes[layer] == nil {
+                self?.remoteInputHandler?.clearStickyLayer()
+            }
             self?.controller?.reload(config: reloaded)
             // reload() resets the engine to the default mode; re-apply the current frontmost app so
             // per-app bindings (e.g. terminal repeat-Delete) don't silently drop to global until the
@@ -157,6 +163,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // Swipes are config-driven only. An unbound swipe does nothing — no native fallback,
             // so HyperVibe's Claude-Code default swipe keys (e.g. right = Shift+Tab) no longer
             // fire and cause the system beep. Bind swipe.<dir> in the config to use them.
+            self?.remoteInputHandler?.noteLayerUsedByOtherInput()   // swipe while holding a layer = use
             let key = "swipe.\(direction.rawValue)"
             if self?.controller?.handle(InputEvent(key: key)) == true {
                 print("👆 \(key) (config)")
@@ -164,6 +171,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         touchHandler?.onTwoFingerTap = { [weak self] in
             // Config-driven only: unbound two-finger tap does nothing. Bind tap.two to use it.
+            self?.remoteInputHandler?.noteLayerUsedByOtherInput()
             if self?.controller?.handle(InputEvent(key: "tap.two")) == true {
                 print("👐 tap.two (config)")
             }

@@ -45,6 +45,9 @@ class RemoteInputHandler {
     private var layerName: String?       // the layer that button engaged
     private var layerUsed = false        // another key was pressed during this hold → momentary use
     private var stickyLayer: String?     // toggled-on layer that persists after release (nil = none)
+    private var stickyButton: String?    // the button that toggled `stickyLayer` on — re-tapping it
+                                         // toggles off even if the `.layer` binding isn't visible
+                                         // from inside the layer's own inherits chain.
     /// Fired when a STICKY layer is toggled on (true) or off (false) — the app shows a HUD. Not
     /// fired for the transient momentary hold (which would flash on every press/release).
     var onLayerToggle: ((_ on: Bool, _ layer: String) -> Void)?
@@ -203,9 +206,26 @@ class RemoteInputHandler {
     /// arms a timer per bound `.hold*` stage, each timer only records the stage reached, and the
     /// deepest stage reached fires on release; a release before stage 1 fires the tap/double.
     /// Unbound events do nothing.
+    /// If a layer button is held momentarily and a DIFFERENT button is pressed, the layer is being
+    /// "used" (as a shift), so its release should revert — not toggle it sticky.
+    private func markLayerUsed(byButton buttonName: String, pressed: Bool) {
+        if pressed, let lb = layerButton, buttonName != lb { layerUsed = true }
+    }
+
+    /// Same, for non-`routeButton` input (center click, swipe, two-finger tap): if a momentary layer
+    /// is held while one of those fires, count it as a use so the layer release reverts, not toggles.
+    func noteLayerUsedByOtherInput() {
+        if layerButton != nil { layerUsed = true }
+    }
+
     private func routeButton(_ buttonName: String, pressed: Bool) {
         guard let controller = controller else { return }
         let tapKey = RemoteInputHandler.configKey(for: buttonName)
+
+        // If a layer button is being held momentarily, ANY other button press "uses" it (so its
+        // release reverts the layer instead of toggling it sticky). Mark this FIRST — before the
+        // Spaces / repeatKey early-returns — so a repeat-bound or Spaces key still counts as a use.
+        markLayerUsed(byButton: buttonName, pressed: pressed)
 
         // 1) Spaces Mode: while armed, the ring becomes a desktop switcher. Intercept on press,
         //    BEFORE any config dispatch, and consume so the normal binding doesn't also fire.
@@ -257,7 +277,13 @@ class RemoteInputHandler {
         //    it fires nothing itself; keys pressed while a layer is active resolve in that layer
         //    (Controller.handle/hasBinding/resolvedAction all consult the active layer).
         if pressed {
-            if case let .layer(name)? = controller.resolvedAction(for: tapKey) {
+            // Engage a layer if this key is a `.layer` binding — OR if it's the button that toggled
+            // the current sticky layer on (so a re-tap can toggle OFF even when the `.layer` binding
+            // isn't visible from inside the layer's own inherits chain).
+            var engage: String? = nil
+            if case let .layer(name)? = controller.resolvedAction(for: tapKey) { engage = name }
+            else if buttonName == stickyButton, let s = stickyLayer { engage = s }
+            if let name = engage {
                 controller.pushLayer(name)          // engage immediately → momentary has no latency
                 layerButton = buttonName
                 layerName = name
@@ -265,9 +291,6 @@ class RemoteInputHandler {
                 print("🔘 \(tapKey) → layer '\(name)' (engage)")
                 return
             }
-            // Any OTHER key pressed while a layer button is held marks it as a momentary USE (so its
-            // release reverts the layer instead of toggling it sticky). Falls through to run the key.
-            if layerButton != nil, buttonName != layerButton { layerUsed = true }
         } else if layerButton == buttonName {
             let name = layerName ?? ""
             if layerUsed {
@@ -275,12 +298,12 @@ class RemoteInputHandler {
                 if let s = stickyLayer { controller.pushLayer(s) } else { controller.popLayer() }
                 print("🔘 \(tapKey) → layer '\(name)' (momentary release)")
             } else if stickyLayer == name {
-                stickyLayer = nil                    // tap while this layer is sticky-on → toggle OFF
+                stickyLayer = nil; stickyButton = nil   // tap while sticky-on → toggle OFF
                 controller.popLayer()
                 onLayerToggle?(false, name)          // HUD: layer off
                 print("🔘 \(tapKey) → layer '\(name)' (toggle off)")
             } else {
-                stickyLayer = name                   // bare tap → toggle ON (sticky; persists)
+                stickyLayer = name; stickyButton = buttonName   // bare tap → toggle ON (sticky)
                 controller.pushLayer(name)
                 onLayerToggle?(true, name)           // HUD: layer on
                 print("🔘 \(tapKey) → layer '\(name)' (toggle on)")
@@ -471,6 +494,7 @@ class RemoteInputHandler {
     }
     
     private func handleSelectButton(pressed: Bool) {
+        if pressed { noteLayerUsedByOtherInput() }   // center-click while holding a layer = momentary use
         if pressed && !isSelectPressed {
             isSelectPressed = true
             isDragging = false
@@ -622,14 +646,37 @@ class RemoteInputHandler {
         buttonState.removeAll()
         stopAllKeyRepeats()   // don't leak auto-repeat timers if the remote disconnects mid-hold
         cancelHoldStages()    // and don't leave release-to-select stage timers pending
+        cancelPendingSingles()   // and don't let a delayed single fire after disconnect
         disarmSpacesMode()    // and don't leave Spaces Mode armed with no device attached
-        if layerButton != nil || stickyLayer != nil {   // don't leave a layer (held or sticky) active
-            controller?.popLayer()
+        // A physically-held momentary layer can't survive the device going away — unwind it and
+        // revert to the sticky layer (if any). KEEP the sticky layer: BLE remotes disconnect on
+        // idle, and a sticky toggle should persist across an idle reconnect, not silently drop.
+        if layerButton != nil {
+            if let s = stickyLayer { controller?.pushLayer(s) } else { controller?.popLayer() }
             layerButton = nil
             layerName = nil
             layerUsed = false
-            stickyLayer = nil
         }
+    }
+
+    /// Cancel any double-tap-delayed single-tap work items (so a pending single can't fire after a
+    /// disconnect / device swap).
+    private func cancelPendingSingles() {
+        for (_, item) in pendingSingle { item.cancel() }
+        pendingSingle.removeAll()
+    }
+
+    /// Clear a sticky layer + its Controller state (used by config hot-reload when the layer's mode
+    /// no longer exists, so bindings don't all resolve to nil with no way to pop).
+    func clearStickyLayer() {
+        let had = stickyLayer
+        stickyLayer = nil
+        stickyButton = nil
+        layerButton = nil
+        layerName = nil
+        layerUsed = false
+        controller?.popLayer()
+        if let name = had { onLayerToggle?(false, name) }
     }
 
     /// Cancel all pending multi-stage hold timers and reset the reached-stage tracking.
