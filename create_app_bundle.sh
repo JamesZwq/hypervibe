@@ -101,12 +101,15 @@ EOF
 # Make executable
 chmod +x "${APP_BUNDLE}/Contents/MacOS/$APP_NAME"
 
-# Sign with hardened runtime + entitlements. Required on modern macOS (14+) for
-# IOHIDManager to deliver Bluetooth HID devices like the Siri Remote to the app.
-# Ad-hoc (`--sign -`) is used; for distribution, swap in a Developer ID identity.
+# Ad-hoc sign WITHOUT hardened runtime. The app loads the private MultitouchSupport framework and
+# takes its touch callback; under the hardened runtime that callback trips code-signing enforcement
+# and the process is SIGKILLed with "Code Signature Invalid" the instant you touch the trackpad.
+# (The raw dev binary works precisely because it has no hardened runtime.) Ad-hoc `--sign -` still
+# gives a stable identity for TCC (Accessibility / Input Monitoring). Entitlements are embedded but
+# only matter under hardened runtime, so they're harmless here.
 if [ -f "HyperVibe.entitlements" ]; then
-    echo "Signing with hardened runtime + entitlements..."
-    codesign --force --options=runtime \
+    echo "Ad-hoc signing (no hardened runtime)..."
+    codesign --force \
         --entitlements "HyperVibe.entitlements" \
         --sign - \
         "${APP_BUNDLE}"
