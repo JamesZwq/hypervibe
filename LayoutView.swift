@@ -141,7 +141,8 @@ struct LayoutView: View {
     private var hub: some View {
         let apps = config.appsByMode
         let def = config.defaultModeName
-        let modes = config.modes.keys.sorted { a, b in
+        let layers = Set(layerNames)   // layer modes are edited via the layer selector, not as apps
+        let modes = config.modes.keys.filter { !layers.contains($0) }.sorted { a, b in
             if a == def { return true }
             if b == def { return false }
             return chipTitle(a, apps: apps, isDefault: false) < chipTitle(b, apps: apps, isDefault: false)
