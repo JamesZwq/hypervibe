@@ -103,18 +103,3 @@ struct TuneSettings: Codable, Equatable {
             invert: circularInvert)
     }
 }
-
-enum TuneStore {
-    private static let key = "siriRemote.tune.v1"
-
-    static func load() -> TuneSettings? {
-        guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
-        return try? JSONDecoder().decode(TuneSettings.self, from: data)
-    }
-
-    static func save(_ t: TuneSettings) {
-        if let data = try? JSONEncoder().encode(t) {
-            UserDefaults.standard.set(data, forKey: key)
-        }
-    }
-}

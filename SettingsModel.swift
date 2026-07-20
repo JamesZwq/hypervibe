@@ -11,7 +11,8 @@ final class SettingsModel: ObservableObject {
     @Published var tune: TuneSettings {
         didSet {
             guard tune != oldValue else { return }
-            TuneStore.save(tune)
+            // Persistence is via config.jsonc (SiriRemoteApp.persistTuneToConfig) — config is the
+            // single source of truth; there's no separate UserDefaults store.
             onApply?(tune)
         }
     }

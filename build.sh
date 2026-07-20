@@ -19,7 +19,6 @@ SWIFT_FILES=(
     "TouchHandler.swift"
     "CursorHighlighter.swift"
     "LayerHUD.swift"
-    "SystemVolume.swift"
     # --- Settings UI (SwiftUI) ---
     "TuneSettings.swift"
     "SettingsModel.swift"

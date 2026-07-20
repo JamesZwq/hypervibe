@@ -10,6 +10,11 @@ import CoreGraphics
 import AppKit
 import Darwin
 
+/// Single-finger trackpad swipe directions (detected here, dispatched to the config as `swipe.<dir>`).
+enum SwipeDirection: String, CaseIterable {
+    case up, down, left, right
+}
+
 private func touchCallback(device: MTDevice?,
                            touches: UnsafeMutablePointer<MTTouch>?,
                            numTouches: Int,

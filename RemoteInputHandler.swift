@@ -95,11 +95,6 @@ class RemoteInputHandler {
     static var lastProcessedButton: String?
     static var lastProcessedTime: UInt64 = 0
 
-    /// Virtual keys currently held down, keyed by the HID button that initiated the hold.
-    /// Captured at press time so release can fire the correct keyUp even if the user
-    /// rebinds the button mid-hold. Cleared on device removal to avoid stuck modifiers.
-    private var heldKeys: [String: (keyCode: Int, flags: CGEventFlags)] = [:]
-
     /// Last observed pressed/released state per button. The Siri Remote mirrors each logical
     /// button across multiple HID interfaces (6 seized here), so every physical press/release
     /// fires the callback N times. This collapses dup events to a single state transition.
@@ -585,64 +580,8 @@ class RemoteInputHandler {
         }
     }
     
-    // MARK: - Action Execution
-    
-    private func executeAction(_ action: ButtonAction, button: String, pressed: Bool) {
-        if action.requiresHold {
-            handleHoldAction(action, button: button, pressed: pressed)
-            return
-        }
-        // Tap actions fire once, on press only.
-        guard pressed else { return }
-        switch action {
-        case .none:
-            break
-        case .enterKey:
-            sendKey(kVK_Return)
-        case .upKey:
-            sendKey(kVK_UpArrow)
-        case .downKey:
-            sendKey(kVK_DownArrow)
-        case .escKey:
-            sendKey(kVK_Escape)
-        case .ctrlC:
-            sendKey(kVK_ANSI_C, flags: .maskControl)
-        case .spaceKey, .rightCmd, .rightOpt:
-            break // handled by handleHoldAction
-        case .trackpadClick:
-            cursorController.performClick()
-        }
-    }
-
-    /// Press/release a virtual key mirroring the HID press duration (push-to-talk).
-    private func handleHoldAction(_ action: ButtonAction, button: String, pressed: Bool) {
-        let spec: (keyCode: Int, flags: CGEventFlags)
-        switch action {
-        case .spaceKey: spec = (kVK_Space,        [])
-        case .rightCmd: spec = (kVK_RightCommand, .maskCommand)
-        case .rightOpt: spec = (kVK_RightOption,  .maskAlternate)
-        default: return
-        }
-
-        if pressed {
-            // Defensive: if a prior release was missed, close the stale hold before opening a new one.
-            if let stale = heldKeys.removeValue(forKey: button) {
-                postKey(keyCode: stale.keyCode, flags: [], keyDown: false)
-            }
-            postKey(keyCode: spec.keyCode, flags: spec.flags, keyDown: true)
-            heldKeys[button] = spec
-        } else {
-            guard let held = heldKeys.removeValue(forKey: button) else { return }
-            postKey(keyCode: held.keyCode, flags: [], keyDown: false)
-        }
-    }
-
-    /// Called on device removal to avoid stuck modifiers if the remote disconnects mid-hold.
+    /// Called on device removal to avoid stuck modifiers / timers if the remote disconnects mid-hold.
     private func releaseAllHeldKeys() {
-        for (_, held) in heldKeys {
-            postKey(keyCode: held.keyCode, flags: [], keyDown: false)
-        }
-        heldKeys.removeAll()
         buttonState.removeAll()
         stopAllKeyRepeats()   // don't leak auto-repeat timers if the remote disconnects mid-hold
         cancelHoldStages()    // and don't leave release-to-select stage timers pending
