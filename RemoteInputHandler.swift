@@ -45,6 +45,9 @@ class RemoteInputHandler {
     private var layerName: String?       // the layer that button engaged
     private var layerUsed = false        // another key was pressed during this hold → momentary use
     private var stickyLayer: String?     // toggled-on layer that persists after release (nil = none)
+    /// Fired when a STICKY layer is toggled on (true) or off (false) — the app shows a HUD. Not
+    /// fired for the transient momentary hold (which would flash on every press/release).
+    var onLayerToggle: ((_ on: Bool, _ layer: String) -> Void)?
 
     /// Double-tap: if a `<key>.double` binding exists, the single is HELD for `doubleTapWindow` to
     /// see whether a 2nd tap arrives. A lone tap fires `<key>` only after the window elapses; a
@@ -274,10 +277,12 @@ class RemoteInputHandler {
             } else if stickyLayer == name {
                 stickyLayer = nil                    // tap while this layer is sticky-on → toggle OFF
                 controller.popLayer()
+                onLayerToggle?(false, name)          // HUD: layer off
                 print("🔘 \(tapKey) → layer '\(name)' (toggle off)")
             } else {
                 stickyLayer = name                   // bare tap → toggle ON (sticky; persists)
                 controller.pushLayer(name)
+                onLayerToggle?(true, name)           // HUD: layer on
                 print("🔘 \(tapKey) → layer '\(name)' (toggle on)")
             }
             layerButton = nil

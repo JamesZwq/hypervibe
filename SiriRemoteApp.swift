@@ -19,6 +19,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var mediaKeyInterceptor: MediaKeyInterceptor?
     private var touchHandler: TouchHandler?
     private var cursorHighlighter: CursorHighlighter?
+    private var layerHUD: LayerHUD?
     /// Mirror of the tune flag — the shake→highlight path is gated on this (see `applyTune`).
     private var findCursorEnabled = true
 
@@ -56,6 +57,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 hl.flash(at: CGPoint(x: screen.frame.midX, y: screen.frame.midY))
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { exit(0) }
+            return
+        }
+
+        // Headless visual QC: `--test-layer-hud` shows the layer HUD (on, then off) so it can be
+        // screenshotted, then exits — without seizing the remote or wiring up the rest of the app.
+        if CommandLine.arguments.contains("--test-layer-hud") {
+            NSApp.setActivationPolicy(.accessory)
+            let hud = LayerHUD()
+            layerHUD = hud
+            hud.showOn("L1")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) { hud.showOff("L1") }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4.5) { exit(0) }
             return
         }
 
@@ -157,6 +170,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // Find-my-cursor: a cursor shake flashes a highlight. Gated on the enabled setting
         // (`findCursorEnabled`, kept in sync by applyTune) so it can be toggled live.
+        // Layer HUD: show a macOS-style overlay when a sticky layer toggles on/off.
+        let hud = LayerHUD()
+        layerHUD = hud
+        remoteInputHandler?.onLayerToggle = { on, name in
+            on ? hud.showOn(name) : hud.showOff(name)
+        }
+
         cursorHighlighter = CursorHighlighter()
         touchHandler?.onShake = { [weak self] in
             guard let self = self, self.findCursorEnabled else { return }
