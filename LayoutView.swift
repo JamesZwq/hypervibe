@@ -23,6 +23,9 @@ struct LayoutView: View {
     /// The input row currently open in the editor panel (nil = nothing selected).
     @State private var selectedKey: String?
     @Environment(\.colorScheme) private var scheme
+    /// Editing scope: nil = base bindings; else a layer name — rows edit `"<layer>.<key>"` in the
+    /// current mode, i.e. "what this layer does in this app" (per-app layers).
+    @State private var editLayer: String? = nil
     // "Add app / layer" popover state.
     @State private var showAdd = false
     @State private var addIsLayer = false
@@ -34,6 +37,20 @@ struct LayoutView: View {
     private var mode: String {
         if let m = selectedMode, config.modes[m] != nil { return m }
         return config.defaultModeName
+    }
+
+    /// The config key a row edits: base key, or `"<layer>.<key>"` when a layer scope is selected.
+    private func keyFor(_ base: String) -> String {
+        editLayer.map { "\($0).\(base)" } ?? base
+    }
+
+    /// Layer names referenced by any `.layer` binding — the layers you can scope editing to.
+    private var layerNames: [String] {
+        var set = Set<String>()
+        for (_, m) in config.modes {
+            for (_, action) in m.bindings { if case let .layer(n) = action { set.insert(n) } }
+        }
+        return set.sorted()
     }
 
     /// When false, the content is laid out without a ScrollView — needed for offscreen
@@ -70,11 +87,37 @@ struct LayoutView: View {
         VStack(alignment: .leading, spacing: 0) {
             head
             hub
+            layerBar
             legend
             stage
             foot
         }
         .padding(.bottom, 8)
+    }
+
+    /// Scope-of-editing selector: base bindings, or "what a layer does in this app". Only shown once
+    /// at least one `.layer` binding exists. Combined with the app hub above, this is the layer × app
+    /// grid: pick an app, pick a layer, edit each input.
+    @ViewBuilder private var layerBar: some View {
+        if !layerNames.isEmpty {
+            HStack(spacing: 8) {
+                Image(systemName: "square.stack.3d.up.fill")
+                    .font(.system(size: 11)).foregroundStyle(editLayer == nil ? .secondary : Color.accentColor)
+                Text("Editing").font(.system(size: 11.5)).foregroundStyle(.secondary)
+                Picker("", selection: $editLayer) {
+                    Text("base bindings").tag(String?.none)
+                    ForEach(layerNames, id: \.self) { Text("layer \($0)").tag(String?.some($0)) }
+                }
+                .labelsHidden().fixedSize()
+                Text(editLayer == nil
+                     ? "for \(mode == config.defaultModeName ? "Global" : mode)"
+                     : "→ what layer \(editLayer!) does in \(mode == config.defaultModeName ? "Global" : mode)")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                Spacer()
+            }
+            .padding(.horizontal, 26).padding(.vertical, 5)
+            .background(editLayer == nil ? Color.clear : Color.accentColor.opacity(0.06))
+        }
     }
 
     // MARK: - Head
@@ -298,7 +341,7 @@ struct LayoutView: View {
     }
 
     private func mappingRow(_ row: InputRow) -> some View {
-        let r = resolve(row.key)
+        let r = resolve(keyFor(row.key))
         return HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.name).font(.system(size: 13.5, weight: .medium))
@@ -511,7 +554,7 @@ struct LayoutView: View {
     }
 
     private func saveSlot(_ slotKey: String, _ action: Action?) {
-        onSave?(config.setBinding(slotKey, to: action, inMode: mode))
+        onSave?(config.setBinding(keyFor(slotKey), to: action, inMode: mode))
     }
 
     static func inputName(_ key: String) -> String {
@@ -530,6 +573,10 @@ struct LayoutView: View {
             HStack(spacing: 8) {
                 Text("EDIT").font(.system(size: 11, weight: .heavy)).tracking(1).foregroundStyle(.secondary)
                 Text(Self.inputName(base)).font(.system(size: 13, weight: .semibold))
+                if let layer = editLayer {
+                    Text("· layer \(layer)").font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                }
                 Text("in \(mode == config.defaultModeName ? "Global" : mode)")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
                 Spacer()
@@ -550,11 +597,11 @@ struct LayoutView: View {
                         Text(slot.label).font(.system(size: 13, weight: .medium))
                             .frame(width: 92, alignment: .leading)
                         ActionSlotEditor(
-                            action: config.modes[mode]?.bindings[slot.slotKey],
+                            action: config.modes[mode]?.bindings[keyFor(slot.slotKey)],
                             modeNames: sortedModeNames,
                             onChange: { saveSlot(slot.slotKey, $0) }
                         )
-                        .id("\(mode)/\(slot.slotKey)")
+                        .id("\(mode)/\(editLayer ?? "-")/\(slot.slotKey)")
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, 16).padding(.vertical, 9)
