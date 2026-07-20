@@ -97,7 +97,7 @@ enum ConfigStore {
           "enabled": true,
           "minRadius": 0.35,         // only touches this far from center count (outer ring)
           "startThreshold": 0.35,    // radians to rotate before scrolling starts
-          "pixelsPerRadian": 160,    // scroll pixels per radian of rotation (speed)
+          "pixelsPerRadian": 107,    // scroll pixels per radian of rotation (speed)
           "scrollEase": 0.3,         // scroll smoothing (smaller = smoother / laggier)
           "invert": false            // flip if it scrolls the wrong way
         }

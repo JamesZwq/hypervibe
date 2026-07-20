@@ -36,7 +36,7 @@ struct TuneSettings: Codable, Equatable {
         holdThreshold: 0.5, holdThreshold2: 1.0, holdThreshold3: 1.6,
         doubleTapWindow: 0.3, spacesModeWindow: 5.0, findCursorEnabled: true,
         circularEnabled: true,
-        circularMinRadius: 0.35, circularStartThreshold: 0.35, circularPixelsPerRadian: 160,
+        circularMinRadius: 0.35, circularStartThreshold: 0.35, circularPixelsPerRadian: 107,
         circularScrollEase: 0.3, circularInvert: false)
 
     /// Seed from the config file's settings block (used on first run only).
